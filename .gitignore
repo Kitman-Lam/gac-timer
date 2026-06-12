@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+*.db
+*.spec
+build/
+dist/
+.env
+.uv/
+.python-version
+CACHEDIR.TAG
+.lock

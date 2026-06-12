@@ -1,0 +1,303 @@
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional
+
+from app.core.models import (
+    AppSetting,
+    Meeting,
+    MeetingTemplate,
+    MeetingTopic,
+    PhaseRecord,
+    TemplateTopic,
+)
+
+
+class DatabaseManager:
+    _instance: Optional["DatabaseManager"] = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, db_path: Optional[str] = None):
+        if hasattr(self, "_initialized") and self._initialized:
+            return
+        self._initialized = True
+
+        if db_path is None:
+            appdata = Path.home() / "AppData" / "Roaming" / "GAC Timer"
+        else:
+            appdata = Path(db_path).parent
+
+        appdata.mkdir(parents=True, exist_ok=True)
+
+        if db_path is None:
+            self._db_path = str(appdata / "gac_timer.db")
+        else:
+            self._db_path = db_path
+
+        self._local = None
+        self._create_tables()
+
+    @contextmanager
+    def _get_connection(self):
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def _create_tables(self):
+        with self._get_connection() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS meeting_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS template_topics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_id INTEGER NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    presentation_minutes INTEGER NOT NULL DEFAULT 10,
+                    qa_minutes INTEGER NOT NULL DEFAULT 5,
+                    FOREIGN KEY (template_id) REFERENCES meeting_templates(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS meetings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    current_topic_index INTEGER DEFAULT 0,
+                    current_phase TEXT DEFAULT 'presentation'
+                );
+
+                CREATE TABLE IF NOT EXISTS meeting_topics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    meeting_id INTEGER NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    presentation_minutes INTEGER NOT NULL,
+                    qa_minutes INTEGER NOT NULL,
+                    FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS phase_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic_id INTEGER NOT NULL,
+                    phase TEXT NOT NULL,
+                    planned_seconds INTEGER NOT NULL,
+                    actual_seconds REAL NOT NULL DEFAULT 0,
+                    overtime_seconds REAL NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    started_at TEXT,
+                    paused_at TEXT,
+                    completed_at TEXT,
+                    paused_elapsed REAL NOT NULL DEFAULT 0,
+                    FOREIGN KEY (topic_id) REFERENCES meeting_topics(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+            """)
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def create_meeting(self, name: str, status: str = "draft") -> Meeting:
+        now = self._now_iso()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO meetings (name, status, created_at, updated_at, current_topic_index, current_phase) VALUES (?, ?, ?, ?, 0, 'presentation')",
+                (name, status, now, now),
+            )
+            return Meeting(
+                id=cursor.lastrowid,
+                name=name,
+                status=status,
+                created_at=now,
+                updated_at=now,
+                current_topic_index=0,
+                current_phase="presentation",
+            )
+
+    def get_meeting(self, meeting_id: int) -> Optional[Meeting]:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+            if row is None:
+                return None
+            return Meeting(**dict(row))
+
+    def update_meeting(self, meeting: Meeting) -> None:
+        now = self._now_iso()
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE meetings SET name = ?, status = ?, updated_at = ?, current_topic_index = ?, current_phase = ? WHERE id = ?",
+                (meeting.name, meeting.status, now, meeting.current_topic_index, meeting.current_phase, meeting.id),
+            )
+
+    def delete_meeting(self, meeting_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
+
+    def list_meetings(self, status: Optional[str] = None) -> List[Meeting]:
+        with self._get_connection() as conn:
+            if status is not None:
+                rows = conn.execute("SELECT * FROM meetings WHERE status = ? ORDER BY created_at DESC", (status,)).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM meetings ORDER BY created_at DESC").fetchall()
+            return [Meeting(**dict(r)) for r in rows]
+
+    def create_topic(self, meeting_id: int, sort_order: int, name: str, presentation_minutes: int = 10, qa_minutes: int = 5) -> MeetingTopic:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO meeting_topics (meeting_id, sort_order, name, presentation_minutes, qa_minutes) VALUES (?, ?, ?, ?, ?)",
+                (meeting_id, sort_order, name, presentation_minutes, qa_minutes),
+            )
+            return MeetingTopic(
+                id=cursor.lastrowid,
+                meeting_id=meeting_id,
+                sort_order=sort_order,
+                name=name,
+                presentation_minutes=presentation_minutes,
+                qa_minutes=qa_minutes,
+            )
+
+    def get_topics_by_meeting(self, meeting_id: int) -> List[MeetingTopic]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM meeting_topics WHERE meeting_id = ? ORDER BY sort_order", (meeting_id,)).fetchall()
+            return [MeetingTopic(**dict(r)) for r in rows]
+
+    def update_topic(self, topic: MeetingTopic) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE meeting_topics SET sort_order = ?, name = ?, presentation_minutes = ?, qa_minutes = ? WHERE id = ?",
+                (topic.sort_order, topic.name, topic.presentation_minutes, topic.qa_minutes, topic.id),
+            )
+
+    def delete_topic(self, topic_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM meeting_topics WHERE id = ?", (topic_id,))
+
+    def reorder_topics(self, meeting_id: int, topic_ids: List[int]) -> None:
+        with self._get_connection() as conn:
+            for order, tid in enumerate(topic_ids):
+                conn.execute("UPDATE meeting_topics SET sort_order = ? WHERE id = ? AND meeting_id = ?", (order, tid, meeting_id))
+
+    def create_phase_record(self, topic_id: int, phase: str, planned_seconds: int) -> PhaseRecord:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO phase_records (topic_id, phase, planned_seconds, actual_seconds, overtime_seconds, status, started_at, paused_at, completed_at, paused_elapsed) VALUES (?, ?, ?, 0, 0, 'pending', NULL, NULL, NULL, 0)",
+                (topic_id, phase, planned_seconds),
+            )
+            return PhaseRecord(
+                id=cursor.lastrowid,
+                topic_id=topic_id,
+                phase=phase,
+                planned_seconds=planned_seconds,
+            )
+
+    def get_phase_records_by_topic(self, topic_id: int) -> List[PhaseRecord]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM phase_records WHERE topic_id = ?", (topic_id,)).fetchall()
+            return [PhaseRecord(**dict(r)) for r in rows]
+
+    def update_phase_record(self, record: PhaseRecord) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE phase_records SET actual_seconds = ?, overtime_seconds = ?, status = ?, started_at = ?, paused_at = ?, completed_at = ?, paused_elapsed = ? WHERE id = ?",
+                (record.actual_seconds, record.overtime_seconds, record.status, record.started_at, record.paused_at, record.completed_at, record.paused_elapsed, record.id),
+            )
+
+    def get_phase_records_by_meeting(self, meeting_id: int) -> List[PhaseRecord]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT pr.* FROM phase_records pr JOIN meeting_topics mt ON pr.topic_id = mt.id WHERE mt.meeting_id = ?",
+                (meeting_id,),
+            ).fetchall()
+            return [PhaseRecord(**dict(r)) for r in rows]
+
+    def create_template(self, name: str) -> MeetingTemplate:
+        now = self._now_iso()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO meeting_templates (name, created_at, updated_at) VALUES (?, ?, ?)",
+                (name, now, now),
+            )
+            return MeetingTemplate(id=cursor.lastrowid, name=name, created_at=now, updated_at=now)
+
+    def get_template(self, template_id: int) -> Optional[MeetingTemplate]:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM meeting_templates WHERE id = ?", (template_id,)).fetchone()
+            if row is None:
+                return None
+            return MeetingTemplate(**dict(row))
+
+    def list_templates(self) -> List[MeetingTemplate]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM meeting_templates ORDER BY created_at DESC").fetchall()
+            return [MeetingTemplate(**dict(r)) for r in rows]
+
+    def delete_template(self, template_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM meeting_templates WHERE id = ?", (template_id,))
+
+    def update_template(self, template_id: int, name: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE meeting_templates SET name = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+                (name, template_id),
+            )
+
+    def create_template_topic(self, template_id: int, sort_order: int, name: str, presentation_minutes: int = 10, qa_minutes: int = 5) -> TemplateTopic:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO template_topics (template_id, sort_order, name, presentation_minutes, qa_minutes) VALUES (?, ?, ?, ?, ?)",
+                (template_id, sort_order, name, presentation_minutes, qa_minutes),
+            )
+            return TemplateTopic(
+                id=cursor.lastrowid,
+                template_id=template_id,
+                sort_order=sort_order,
+                name=name,
+                presentation_minutes=presentation_minutes,
+                qa_minutes=qa_minutes,
+            )
+
+    def get_template_topics(self, template_id: int) -> List[TemplateTopic]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM template_topics WHERE template_id = ? ORDER BY sort_order", (template_id,)).fetchall()
+            return [TemplateTopic(**dict(r)) for r in rows]
+
+    def delete_template_topics(self, template_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM template_topics WHERE template_id = ?", (template_id,))
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+            if row is None:
+                return default
+            return row["value"]
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?", (key, value, value))
