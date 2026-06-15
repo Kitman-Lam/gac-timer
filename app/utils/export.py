@@ -150,4 +150,9 @@ def export_to_excel(meeting_data: dict, file_path: str):
                 max_length = max(max_length, char_count)
         ws.column_dimensions[col_letter].width = max(max_length + 4, 10)
 
+    import os
+    # 检查路径是否存在
+    dir_path = os.path.dirname(file_path)
+    if dir_path and not os.path.exists(dir_path):
+        os.makedirs(dir_path)
     wb.save(file_path)

@@ -13,6 +13,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+import os
+import subprocess
+
 from app.ui.theme import (
     BG_BASE,
     BG_SURFACE,
@@ -27,7 +30,7 @@ from app.ui.theme import (
     TEXT_SECONDARY,
     format_time,
 )
-from app.utils.export import export_to_csv, export_to_excel
+from app.utils.export import export_to_excel
 
 
 class StatsDialog(QDialog):
@@ -113,10 +116,11 @@ class StatsDialog(QDialog):
         data_rows = len(topics) * 2
         total_rows = data_rows + 1
 
-        columns = ["议题名称", "阶段", "计划时长(分钟)", "实际用时", "超时时长", "占比"]
+        columns = ["议题名称", "阶段", "计划时长(分钟)", "实际用时", "超时时长", "会议时长占比"]
         self._table.setColumnCount(len(columns))
         self._table.setHorizontalHeaderLabels(columns)
         self._table.setRowCount(total_rows)
+        self._table.verticalHeader().setDefaultSectionSize(50)
 
         danger_color = QColor(DANGER)
         bold_font = QFont(FONT_FAMILY)
@@ -201,17 +205,6 @@ class StatsDialog(QDialog):
             safe_name = "meeting"
         return f"{date_part}_{safe_name}{ext}"
 
-    def _on_export_csv(self):
-        default_name = self._get_default_filename(".csv")
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出 CSV", default_name, "CSV 文件 (*.csv)"
-        )
-        if file_path:
-            try:
-                export_to_csv(self._meeting_data, file_path)
-            except Exception as e:
-                QMessageBox.critical(self, "导出失败", str(e))
-
     def _on_export_excel(self):
         default_name = self._get_default_filename(".xlsx")
         file_path, _ = QFileDialog.getSaveFileName(
@@ -222,3 +215,19 @@ class StatsDialog(QDialog):
                 export_to_excel(self._meeting_data, file_path)
             except Exception as e:
                 QMessageBox.critical(self, "导出失败", str(e))
+                return
+            self._show_export_success(file_path)
+
+    def _show_export_success(self, file_path: str):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("导出成功")
+        msg_box.setText("成功导出")
+        msg_box.setIcon(QMessageBox.Information)
+
+        open_btn = msg_box.addButton("打开文件路径", QMessageBox.AcceptRole)
+        confirm_btn = msg_box.addButton("确认", QMessageBox.RejectRole)
+
+        msg_box.exec()
+
+        if msg_box.clickedButton() == open_btn:
+            subprocess.Popen(["explorer", "/select,", os.path.abspath(file_path)])

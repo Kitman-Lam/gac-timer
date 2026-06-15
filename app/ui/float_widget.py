@@ -1,8 +1,8 @@
 import math
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QWidget, QApplication
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QAction, QRadialGradient
+from PySide6.QtWidgets import QWidget, QApplication, QMenu
 
 from app.ui.theme import (
     DANGER,
@@ -13,10 +13,13 @@ from app.ui.theme import (
     WARNING,
     format_time,
 )
-from app.utils.win32_api import set_window_topmost
 
-ALERT_ORANGE = "#FF6B35"
-
+BLUE_GRADIENT_CENTER = QColor("#003388")
+BLUE_GRADIENT_OUTER = QColor("#3488ff")
+ORANGE_GRADIENT_CENTER = QColor("#b35000")
+ORANGE_GRADIENT_OUTER = QColor("#ffaa22")
+RED_GRADIENT_CENTER = QColor("#88001E")
+RED_GRADIENT_OUTER = QColor("#FF0000")
 
 FLOAT_SIZE_MAP = {
     "small": 100,
@@ -27,6 +30,12 @@ FLOAT_SIZE_MAP = {
 
 class FloatTimer(QWidget):
     close_clicked = Signal()
+    pause_requested = Signal()
+    reset_requested = Signal()
+    enter_discussion_requested = Signal()
+    next_topic_requested = Signal()
+    add_temp_topic_requested = Signal()
+    end_meeting_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,23 +51,27 @@ class FloatTimer(QWidget):
         self._is_paused = False
         self._is_running = False
         self._warning_mode = False
-        self._blink_visible = True
+        self._phase = "presentation"
+
+        self._pulse_active = False
+        self._pulse_frame = 0
+        self._last_5min_block = 0
         self._blink_counter = 0
-        self._blink_phase = "idle"
-        self._was_overtime = False
-        self._last_flash_5min = 0
-        self._seesaw_frame = 0
-        self._seesaw_active = False
-        self._seesaw_text = ""
-        self._alert_text = ""
+
+        self._warning_minutes = 5
+        self._overtime_minutes = 5
 
         self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+            Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_InputMethodEnabled, False)
+        self.setWindowOpacity(self._opacity_percent / 100.0)
         self._apply_size()
 
     def _opacity_alpha(self, alpha: int) -> int:
+        if self._opacity_percent >= 100:
+            return alpha
         return int(alpha * self._opacity_percent / 100.0)
 
     def paintEvent(self, event):
@@ -68,43 +81,68 @@ class FloatTimer(QWidget):
 
         cx = self.width() / 2
         cy = self.height() / 2
-        radius = min(self.width(), self.height()) / 2 - 12
+        radius = min(self.width(), self.height()) / 2 - 4
 
+        # 绘制背景圆
+        self._draw_background_circle(painter, cx, cy, radius)
+        
         self._draw_pie(painter, cx, cy, radius)
+
+        if self._is_running:
+            self._draw_top_text(painter, cx, cy, radius)
+            self._draw_bottom_text(painter, cx, cy, radius)
+            if self._is_paused:
+                self._draw_paused_text(painter, cx, cy, radius)
         self._draw_center_text(painter, cx, cy, radius)
 
-        if self._seesaw_active:
-            self._draw_seesaw_text(painter, cx, cy + radius + 14)
-
         painter.end()
+
+    def _draw_background_circle(self, painter: QPainter, cx: float, cy: float, radius: float):
+        bg_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
+        painter.setBrush(QColor(200, 200, 200, self._opacity_alpha(80)))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(bg_rect)
 
     def _draw_pie(self, painter: QPainter, cx: float, cy: float, radius: float):
         pie_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
 
-        painter.setPen(Qt.NoPen)
-
         if self._is_overtime:
-            if self._alert_text:
-                bright = QColor(ALERT_ORANGE)
-                bright.setAlpha(self._opacity_alpha(255))
-                light = QColor(ALERT_ORANGE)
-                light.setAlpha(self._opacity_alpha(140))
-                painter.setBrush(bright if self._blink_visible else light)
-            elif self._blink_visible:
-                c = QColor(DANGER)
-                c.setAlpha(self._opacity_alpha(255))
-                painter.setBrush(c)
+            if self._pulse_active:
+                # 闪烁效果：快速闪烁，约 0.3 秒一次，持续 1 秒
+                cycle = 20  # 更快的闪烁周期
+                phase = self._pulse_frame % cycle
+                if phase < 10:
+                    alpha = 255
+                else:
+                    alpha = 100
+
+                gradient = QRadialGradient(cx, cy, radius)
+                gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER))
+                gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER))
+                
+                # 手动设置渐变透明度
+                if alpha < 255:
+                    gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER.red(), RED_GRADIENT_OUTER.green(), RED_GRADIENT_OUTER.blue(), self._opacity_alpha(alpha)))
+                    gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER.red(), RED_GRADIENT_CENTER.green(), RED_GRADIENT_CENTER.blue(), self._opacity_alpha(alpha)))
+                
+                painter.setBrush(gradient)
             else:
-                light_red = QColor(DANGER)
-                light_red.setAlpha(self._opacity_alpha(140))
-                painter.setBrush(light_red)
+                # 不闪烁时正常显示红色
+                gradient = QRadialGradient(cx, cy, radius)
+                gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER))
+                gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER))
+                painter.setBrush(gradient)
+                
+            painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(30)), 1))
             painter.drawEllipse(pie_rect)
             return
 
         if not self._is_running:
-            idle_bg = QColor(0, 0, 0, 128)
-            idle_bg.setAlpha(self._opacity_alpha(128))
-            painter.setBrush(idle_bg)
+            gradient = QRadialGradient(cx, cy, radius)
+            gradient.setColorAt(0, QColor(BLUE_GRADIENT_OUTER))
+            gradient.setColorAt(1, QColor(BLUE_GRADIENT_CENTER))
+            painter.setBrush(gradient)
+            painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(30)), 1))
             painter.drawEllipse(pie_rect)
             return
 
@@ -113,19 +151,22 @@ class FloatTimer(QWidget):
 
         remaining_ratio = max(0.0, 1.0 - min(self._progress, 1.0))
 
+        gradient = QRadialGradient(cx, cy, radius)
         if self._warning_mode:
-            pie_color = QColor(WARNING)
+            gradient.setColorAt(0, QColor(ORANGE_GRADIENT_OUTER))
+            gradient.setColorAt(1, QColor(ORANGE_GRADIENT_CENTER))
         else:
-            pie_color = QColor(PRIMARY)
+            gradient.setColorAt(0, QColor(BLUE_GRADIENT_OUTER))
+            gradient.setColorAt(1, QColor(BLUE_GRADIENT_CENTER))
 
-        pie_color.setAlpha(self._opacity_alpha(255))
-        painter.setBrush(pie_color)
+        painter.setBrush(gradient)
+        painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(30)), 1))
         span_angle = int(remaining_ratio * 360 * -16)
         painter.drawPie(pie_rect, 90 * 16, span_angle)
 
-    def _draw_text_with_outline(self, painter: QPainter, text: str,
-                                 font: QFont, fill_color: QColor,
-                                 cx: float, cy: float, line2: str = None):
+    def _draw_glow_text(self, painter: QPainter, text: str,
+                        font: QFont, fill_color: QColor,
+                        cx: float, cy: float, line2: str = None):
         lines = [text]
         if line2:
             lines.append(line2)
@@ -135,84 +176,95 @@ class FloatTimer(QWidget):
             path = QPainterPath()
             path.addText(0, 0, font, line)
             br = path.boundingRect()
-            y_offset = -br.y() + cy - (len(lines) * br.height() / 2) + i * (br.height() + 4)
+            y_offset = -br.y() + cy - (len(lines) * br.height() / 2) + i * (br.height() + 12)
             path.translate(-br.x() + cx - br.width() / 2, y_offset)
             full_path.addPath(path)
 
-        painter.setPen(QPen(QColor(255, 255, 255, self._opacity_alpha(200)), 1.8))
+        stroke_width = max(1.5, self._current_size * 0.015)
+        painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(255)), stroke_width))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(full_path)
-
+        
         painter.setPen(Qt.NoPen)
         painter.setBrush(fill_color)
         painter.drawPath(full_path)
 
-    def _draw_center_text(self, painter: QPainter, cx: float, cy: float, radius: float):
-        max_text_width = int(radius * 2 * 0.95)
+    def _draw_top_text(self, painter: QPainter, cx: float, cy: float, radius: float):
+        if self._is_overtime:
+            text = "超时"
+        elif not self._is_running:
+            text = "会议未开始"
+        else:
+            text = "剩余时间"
 
-        if self._alert_text:
-            parts = self._alert_text.split("\n")
-            line1 = parts[0] if len(parts) > 0 else ""
-            line2 = parts[1] if len(parts) > 1 else None
-            font = QFont(FONT_FAMILY, 11, QFont.Bold)
-            fm = QFontMetrics(font)
-            while fm.horizontalAdvance(line1) > max_text_width and font.pointSize() > 6:
-                font.setPointSize(font.pointSize() - 1)
-                fm = QFontMetrics(font)
-            self._draw_text_with_outline(painter, line1, font,
-                                         QColor(255, 255, 255), cx, cy, line2)
+        font_size = max(8, int(radius * 0.18))
+        font = QFont(FONT_FAMILY, font_size, QFont.Bold)
+        painter.setFont(font)
+
+        y = cy - radius * 0.45
+
+        fill_color = QColor(255, 255, 255)
+        self._draw_glow_text(painter, text, font, fill_color, cx, y)
+
+    def _draw_bottom_text(self, painter: QPainter, cx: float, cy: float, radius: float):
+        if self._is_overtime and self._is_paused:
+            text = "暂停"
+        elif self._phase == "qa":
+            text = "讨论中"
+        else:
+            text = "汇报中"
+
+        font_size = max(8, int(radius * 0.18))
+        font = QFont(FONT_FAMILY, font_size, QFont.Bold)
+        painter.setFont(font)
+
+        y = cy + radius * 0.45
+
+        fill_color = QColor(255, 255, 255)
+        self._draw_glow_text(painter, text, font, fill_color, cx, y)
+
+    def _draw_center_text(self, painter: QPainter, cx: float, cy: float, radius: float):
+        max_text_width = int(radius * 2 * 0.85)
+
+        if self._is_overtime and self._is_paused:
+            time_str = "-" + format_time(self._overtime)
         elif self._is_overtime:
             time_str = format_time(self._overtime)
-            font = QFont(FONT_FAMILY, 11, QFont.Bold)
-            fm = QFontMetrics(font)
-            while fm.horizontalAdvance(time_str) > max_text_width and font.pointSize() > 6:
-                font.setPointSize(font.pointSize() - 1)
-                fm = QFontMetrics(font)
-            fill_color = QColor(255, 255, 255)
-            self._draw_text_with_outline(painter, time_str, font, fill_color, cx, cy)
         elif not self._is_running:
             time_str = "--:--"
-            font = QFont(FONT_FAMILY, 11, QFont.Bold)
-            fm = QFontMetrics(font)
-            while fm.horizontalAdvance(time_str) > max_text_width and font.pointSize() > 6:
-                font.setPointSize(font.pointSize() - 1)
-                fm = QFontMetrics(font)
-            self._draw_text_with_outline(painter, time_str, font, QColor(TEXT_PRIMARY), cx, cy)
         else:
             time_str = format_time(self._remaining)
-            font = QFont(FONT_FAMILY, 11, QFont.Bold)
+
+        font_size = int(radius * 0.45)
+        font = QFont(FONT_FAMILY, font_size, QFont.Bold)
+        fm = QFontMetrics(font)
+        while fm.horizontalAdvance(time_str) > max_text_width and font_size > 8:
+            font_size -= 1
+            font = QFont(FONT_FAMILY, font_size, QFont.Bold)
             fm = QFontMetrics(font)
-            while fm.horizontalAdvance(time_str) > max_text_width and font.pointSize() > 6:
-                font.setPointSize(font.pointSize() - 1)
-                fm = QFontMetrics(font)
-            self._draw_text_with_outline(painter, time_str,
-                                         font, QColor(TEXT_PRIMARY), cx, cy)
 
-    def _draw_seesaw_text(self, painter: QPainter, cx: float, y: float):
-        font = QFont(FONT_FAMILY, 9)
-        path = QPainterPath()
-        path.addText(0, 0, font, self._seesaw_text)
-        br = path.boundingRect()
+        painter.setFont(font)
+        fill_color = QColor(255, 255, 255)
+        self._draw_glow_text(painter, time_str, font, fill_color, cx, cy)
 
-        cycle = 30
-        phase = (self._seesaw_frame % cycle) / cycle
-        offset_x = math.sin(phase * math.pi * 4) * 6
+    def _draw_paused_text(self, painter: QPainter, cx: float, cy: float, radius: float):
+        if self._is_overtime and self._is_paused:
+            blinking = self._blink_counter % 40 < 20
+            if not blinking:
+                return
 
-        path.translate(-br.x() + cx - br.width() / 2 + offset_x,
-                       -br.y() + y)
+        text = "暂停"
+        font_size = max(8, int(radius * 0.18))
+        font = QFont(FONT_FAMILY, font_size, QFont.Bold)
+        painter.setFont(font)
 
-        painter.setPen(QPen(QColor(255, 255, 255, self._opacity_alpha(180)), 1.2))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPath(path)
+        y = cy + radius * 0.75
 
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(ALERT_ORANGE))
-        painter.drawPath(path)
+        fill_color = QColor(DANGER)
+        self._draw_glow_text(painter, text, font, fill_color, cx, y)
 
     def showEvent(self, event):
         super().showEvent(event)
-        hwnd = int(self.winId())
-        set_window_topmost(hwnd, True)
         self._restore_position()
 
     def hideEvent(self, event):
@@ -270,70 +322,76 @@ class FloatTimer(QWidget):
         self._is_paused = is_paused
         self._is_running = state != "idle"
 
-        self._warning_mode = is_countdown and not is_overtime and 0 < remaining <= 30
+        self._warning_mode = is_countdown and not is_overtime and 0 < remaining <= self._warning_minutes * 60
 
         if is_overtime:
-            if not self._was_overtime:
-                self._blink_phase = "initial"
-                self._blink_counter = 0
-                self._last_flash_5min = 0
-                self._seesaw_active = False
-                self._alert_text = ""
-            else:
-                self._blink_counter += 1
+            overtime_seconds = max(0, int(overtime))
+            current_interval_block = overtime_seconds // (self._overtime_minutes * 60) if self._overtime_minutes > 0 else 0
+            if current_interval_block > self._last_5min_block:
+                self._pulse_active = True
+                self._pulse_frame = 0
+                self._last_5min_block = current_interval_block
 
-            current_5min_block = int(overtime // 300) if overtime > 0 else 0
-
-            if self._blink_phase == "initial":
-                if self._blink_counter < 30:
-                    self._blink_visible = (self._blink_counter // 5) % 2 == 0
-                else:
-                    self._blink_phase = "idle"
-                    self._blink_visible = False
-            elif self._blink_phase == "idle":
-                if current_5min_block > self._last_flash_5min:
-                    self._blink_phase = "5min"
-                    self._blink_counter = 0
-                    self._blink_visible = True
-                    minutes = current_5min_block * 5
-                    self._alert_text = f"超时\n{minutes}分钟"
-                else:
-                    self._blink_visible = False
-            elif self._blink_phase == "5min":
-                if self._blink_counter < 50:
-                    self._blink_visible = (self._blink_counter // 5) % 2 == 0
-                    if self._blink_counter == 49:
-                        self._last_flash_5min = current_5min_block
-                        self._seesaw_text = self._alert_text.replace("\n", "")
-                        self._seesaw_frame = 0
-                        self._seesaw_active = True
-                else:
-                    self._blink_phase = "idle"
-                    self._blink_visible = False
-                    self._alert_text = ""
-
-            self._was_overtime = True
+            if self._pulse_active:
+                self._pulse_frame += 1
+                # 持续 1 秒（约 60 帧）
+                if self._pulse_frame > 60:
+                    self._pulse_active = False
         else:
-            self._blink_visible = True
-            self._blink_counter = 0
-            self._blink_phase = "idle"
-            self._was_overtime = False
-            self._last_flash_5min = 0
-            self._seesaw_active = False
-            self._alert_text = ""
+            self._pulse_active = False
+            self._pulse_frame = 0
+            self._last_5min_block = 0
 
-        if self._seesaw_active:
-            self._seesaw_frame += 1
-            if self._seesaw_frame > 90:
-                self._seesaw_active = False
+        if self._is_paused:
+            self._blink_counter = (self._blink_counter + 1) % 40
 
         self.update()
 
     def set_topic_info(self, topic_name: str, phase: str):
-        pass
+        self._phase = phase
+        self.update()
+
+    def set_reminder_config(self, warning_minutes: int, overtime_minutes: int):
+        self._warning_minutes = warning_minutes
+        self._overtime_minutes = overtime_minutes
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+
+        action_text = "开始" if self._is_paused else "暂停"
+        pause_action = QAction(action_text, self)
+        pause_action.triggered.connect(self.pause_requested.emit)
+        menu.addAction(pause_action)
+
+        reset_action = QAction("重置", self)
+        reset_action.triggered.connect(self.reset_requested.emit)
+        menu.addAction(reset_action)
+
+        menu.addSeparator()
+
+        enter_discussion_action = QAction("进入讨论", self)
+        enter_discussion_action.triggered.connect(self.enter_discussion_requested.emit)
+        menu.addAction(enter_discussion_action)
+
+        next_topic_action = QAction("下一议题", self)
+        next_topic_action.triggered.connect(self.next_topic_requested.emit)
+        menu.addAction(next_topic_action)
+
+        menu.addSeparator()
+
+        add_temp_topic_action = QAction("+ 临时议题", self)
+        add_temp_topic_action.triggered.connect(self.add_temp_topic_requested.emit)
+        menu.addAction(add_temp_topic_action)
+
+        end_meeting_action = QAction("结束会议", self)
+        end_meeting_action.triggered.connect(self.end_meeting_requested.emit)
+        menu.addAction(end_meeting_action)
+
+        menu.exec_(event.globalPos())
 
     def set_opacity(self, opacity: int):
         self._opacity_percent = max(10, min(100, opacity))
+        self.setWindowOpacity(self._opacity_percent / 100.0)
         self.update()
 
     def set_size(self, size_key: str):

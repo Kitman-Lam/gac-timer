@@ -1,15 +1,15 @@
 from datetime import datetime
+import os
 
-from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Signal, Qt, QRect
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -18,11 +18,47 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtWidgets import QStyleOptionButton, QStyle
+from PySide6.QtGui import QPainter
+
+class CheckableHeaderView(QHeaderView):
+    checkbox_clicked = Signal(bool)
+    
+    def __init__(self, parent=None):
+        super().__init__(Qt.Horizontal, parent)
+        self._is_checked = False
+        self.setSectionsClickable(True)
+        
+    def paintSection(self, painter, rect, logicalIndex):
+        super().paintSection(painter, rect, logicalIndex)
+        if logicalIndex == 0:
+            # 计算和表格单元格中复选框相同的位置
+            y_offset = 10 + 4  # 往下移4px
+            x_offset = 5  # 往右移5px
+            opt = QStyleOptionButton()
+            opt.rect = QRect(rect.x() + (rect.width() - 16) // 2 + x_offset, rect.y() + y_offset, 16, 16)
+            opt.state = QStyle.State_Enabled | (QStyle.State_On if self._is_checked else QStyle.State_Off)
+            self.style().drawControl(QStyle.CE_CheckBox, opt, painter)
+            
+    def mousePressEvent(self, event):
+        index = self.logicalIndexAt(event.pos())
+        if index == 0:
+            self._is_checked = not self._is_checked
+            self.checkbox_clicked.emit(self._is_checked)
+            self.updateSection(0)
+        else:
+            super().mousePressEvent(event)
+            
+    def is_all_checked(self):
+        return self._is_checked
+        
+    def set_all_checked(self, checked):
+        if self._is_checked != checked:
+            self._is_checked = checked
+            self.updateSection(0)
 
 from app.core.database import DatabaseManager
-from app.ui.stats_dialog import StatsDialog
 from app.ui.theme import (
-    BG_ELEVATED,
     BG_SURFACE,
     BORDER_DEFAULT,
     DANGER,
@@ -31,32 +67,12 @@ from app.ui.theme import (
     FONT_SIZE_SMALL,
     PRIMARY,
     PRIMARY_LIGHT,
-    SUCCESS,
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     format_time,
 )
 from app.utils.export import export_to_csv, export_to_excel
-
-
-_STATUS_LABELS = {
-    "draft": "\u8349\u7a3f",
-    "in_progress": "\u8fdb\u884c\u4e2d",
-    "completed": "\u5df2\u5b8c\u6210",
-}
-
-_STATUS_COLORS = {
-    "draft": (BG_ELEVATED, TEXT_MUTED),
-    "in_progress": (PRIMARY_LIGHT, PRIMARY),
-    "completed": ("#E8F8EC", SUCCESS),
-}
-
-_FILTER_MAP = {
-    0: None,
-    1: "completed",
-    2: "in_progress",
-}
 
 
 class HistoryPanel(QWidget):
@@ -82,58 +98,46 @@ class HistoryPanel(QWidget):
         )
         main_layout.addWidget(header)
 
-        filter_layout = QHBoxLayout()
-        filter_layout.setSpacing(8)
-
-        filter_label = QLabel("筛选：")
-        filter_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: {FONT_SIZE_SMALL}px; "
-            f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("搜索会议名称或日期...")
+        self._search_edit.setStyleSheet(
+            f"QLineEdit {{ background-color: #FFFFFF; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {BORDER_DEFAULT}; border-radius: 6px; "
+            f"padding: 8px 12px; font-size: {FONT_SIZE_SMALL}px; "
+            f"font-family: '{FONT_FAMILY}'; }}"
+            f"QLineEdit:focus {{ border: 2px solid {PRIMARY}; }}"
         )
-        filter_layout.addWidget(filter_label)
-
-        self._filter_combo = QComboBox()
-        self._filter_combo.addItems(["全部", "已完成", "进行中"])
-        self._filter_combo.setStyleSheet(
-            f"QComboBox {{ background-color: #FFFFFF; color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; "
-            f"padding: 6px 10px; font-size: {FONT_SIZE_SMALL}px; "
-            f"font-family: '{FONT_FAMILY}'; min-width: 100px; }}"
-            f"QComboBox::drop-down {{ border: none; width: 20px; }}"
-            f"QComboBox::down-arrow {{ image: none; border: none; }}"
-            f"QComboBox QAbstractItemView {{ background-color: #FFFFFF; "
-            f"color: {TEXT_PRIMARY}; border: 1px solid {BORDER_DEFAULT}; "
-            f"selection-background-color: {PRIMARY_LIGHT}; }}"
-        )
-        self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
-        filter_layout.addWidget(self._filter_combo)
-        filter_layout.addStretch()
-
-        main_layout.addLayout(filter_layout)
+        self._search_edit.textChanged.connect(self._on_search_changed)
+        main_layout.addWidget(self._search_edit)
 
         self._meeting_table = QTableWidget()
         self._meeting_table.setColumnCount(4)
-        self._meeting_table.setHorizontalHeaderLabels(["会议名称", "日期", "议题数", "状态"])
-        self._meeting_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._meeting_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self._meeting_table.setHorizontalHeaderLabels(["", "会议名称", "日期", "议题数"])
+        self._checkable_header = CheckableHeaderView(self._meeting_table)
+        self._meeting_table.setHorizontalHeader(self._checkable_header)
+        self._checkable_header.checkbox_clicked.connect(self._on_check_all_clicked)
+        self._meeting_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self._meeting_table.setColumnWidth(0, 36)
+        self._meeting_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self._meeting_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self._meeting_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self._meeting_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._meeting_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._meeting_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._meeting_table.verticalHeader().setVisible(False)
+        self._meeting_table.verticalHeader().setDefaultSectionSize(50)
         self._meeting_table.setAlternatingRowColors(True)
         self._meeting_table.setStyleSheet(
             f"QTableWidget {{ background-color: transparent; border: none; "
             f"gridline-color: transparent; outline: none; }}"
-            f"QTableWidget::item {{ padding: 8px 12px; border-bottom: 1px solid {BORDER_DEFAULT}; "
+            f"QTableWidget::item {{ padding: 10px 12px; border-bottom: 1px solid {BORDER_DEFAULT}; "
             f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_SMALL}px; "
             f"font-family: '{FONT_FAMILY}'; background-color: #FFFFFF; }}"
             f"QTableWidget::item:alternate {{ background-color: {BG_SURFACE}; }}"
             f"QTableWidget::item:selected {{ background-color: {PRIMARY_LIGHT}; color: {PRIMARY}; }}"
             f"QHeaderView::section {{ background-color: #FFFFFF; color: {TEXT_SECONDARY}; "
             f"border: none; border-bottom: 2px solid {BORDER_DEFAULT}; "
-            f"padding: 8px 12px; font-size: {FONT_SIZE_SMALL}px; "
+            f"padding: 10px 12px; font-size: {FONT_SIZE_SMALL}px; "
             f"font-weight: bold; font-family: '{FONT_FAMILY}'; }}"
         )
         self._meeting_table.currentCellChanged.connect(self._on_selection_changed)
@@ -149,17 +153,15 @@ class HistoryPanel(QWidget):
         self._stats_btn.clicked.connect(self._on_view_stats)
         btn_layout.addWidget(self._stats_btn)
 
-        self._export_btn = QPushButton("\u5bfc\u51fa")
-        self._export_btn.setObjectName("secondaryBtn")
-        self._export_btn.setEnabled(False)
-        self._export_btn.clicked.connect(self._on_export)
-        btn_layout.addWidget(self._export_btn)
+        self._batch_export_btn = QPushButton("\u5bfc\u51fa")
+        self._batch_export_btn.setObjectName("secondaryBtn")
+        self._batch_export_btn.clicked.connect(self._on_batch_export)
+        btn_layout.addWidget(self._batch_export_btn)
 
-        self._delete_btn = QPushButton("\u5220\u9664")
-        self._delete_btn.setObjectName("dangerBtn")
-        self._delete_btn.setEnabled(False)
-        self._delete_btn.clicked.connect(self._on_delete)
-        btn_layout.addWidget(self._delete_btn)
+        self._batch_delete_btn = QPushButton("\u6279\u91cf\u5220\u9664")
+        self._batch_delete_btn.setObjectName("dangerBtn")
+        self._batch_delete_btn.clicked.connect(self._on_batch_delete)
+        btn_layout.addWidget(self._batch_delete_btn)
 
         main_layout.addLayout(btn_layout)
 
@@ -175,9 +177,7 @@ class HistoryPanel(QWidget):
         main_layout.addWidget(self._detail_frame)
 
     def refresh_list(self):
-        filter_index = self._filter_combo.currentIndex()
-        status = _FILTER_MAP.get(filter_index)
-        self._meetings = self._db.list_meetings(status)
+        self._meetings = self._db.list_meetings()
 
         self._meeting_table.setRowCount(0)
         for row, meeting in enumerate(self._meetings):
@@ -191,31 +191,29 @@ class HistoryPanel(QWidget):
             except (ValueError, TypeError):
                 date_str = meeting.created_at
 
-            status_text = _STATUS_LABELS.get(meeting.status, meeting.status)
-            badge_bg, badge_fg = _STATUS_COLORS.get(meeting.status, (BG_ELEVATED, TEXT_MUTED))
+            chk_item = QTableWidgetItem()
+            chk_item.setFlags(
+                Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable
+            )
+            chk_item.setCheckState(Qt.Unchecked)
+            self._meeting_table.setItem(row, 0, chk_item)
 
             name_item = QTableWidgetItem(meeting.name)
             name_item.setData(Qt.UserRole, meeting.id)
-            self._meeting_table.setItem(row, 0, name_item)
+            self._meeting_table.setItem(row, 1, name_item)
 
             date_item = QTableWidgetItem(date_str)
-            self._meeting_table.setItem(row, 1, date_item)
+            self._meeting_table.setItem(row, 2, date_item)
 
             count_item = QTableWidgetItem(str(len(topics)))
             count_item.setTextAlignment(Qt.AlignCenter)
-            self._meeting_table.setItem(row, 2, count_item)
-
-            status_item = QTableWidgetItem(status_text)
-            status_item.setTextAlignment(Qt.AlignCenter)
-            status_item.setForeground(QColor(badge_fg))
-            status_item.setBackground(QColor(badge_bg))
-            self._meeting_table.setItem(row, 3, status_item)
+            self._meeting_table.setItem(row, 3, count_item)
 
     def get_selected_meeting(self):
         row = self._meeting_table.currentRow()
         if row < 0:
             return None
-        name_item = self._meeting_table.item(row, 0)
+        name_item = self._meeting_table.item(row, 1)
         if name_item is None:
             return None
         meeting_id = name_item.data(Qt.UserRole)
@@ -286,137 +284,162 @@ class HistoryPanel(QWidget):
             "total_overtime_seconds": total_overtime_seconds,
         }
 
-    def _on_filter_changed(self):
-        self.refresh_list()
+    def _on_search_changed(self):
+        search_text = self._search_edit.text().strip().lower()
+        for row in range(self._meeting_table.rowCount()):
+            name_item = self._meeting_table.item(row, 1)
+            date_item = self._meeting_table.item(row, 2)
+            if name_item and date_item:
+                name = name_item.text().lower()
+                date = date_item.text().lower()
+                match = search_text in name or search_text in date
+                self._meeting_table.setRowHidden(row, not match)
+
+    def _on_check_all_clicked(self, checked):
+        check_state = Qt.Checked if checked else Qt.Unchecked
+        for row in range(self._meeting_table.rowCount()):
+            chk_item = self._meeting_table.item(row, 0)
+            if chk_item:
+                chk_item.setCheckState(check_state)
+
+    def _has_checked_rows(self):
+        for row in range(self._meeting_table.rowCount()):
+            chk_item = self._meeting_table.item(row, 0)
+            if chk_item and chk_item.checkState() == Qt.Checked:
+                return True
+        return False
 
     def _on_selection_changed(self, row: int, col: int, prev_row: int, prev_col: int):
-        has_selection = row >= 0
-        self._stats_btn.setEnabled(has_selection)
-        self._export_btn.setEnabled(has_selection)
-        self._delete_btn.setEnabled(has_selection)
+        if self._has_checked_rows():
+            self._detail_frame.hide()
+            self._stats_btn.setEnabled(False)
+        else:
+            has_selection = row >= 0
+            self._stats_btn.setEnabled(has_selection)
 
-        if has_selection:
-            name_item = self._meeting_table.item(row, 0)
-            if name_item:
-                meeting_id = name_item.data(Qt.UserRole)
-                if meeting_id is not None:
-                    self.meeting_selected.emit(meeting_id)
-                    self._show_detail(meeting_id)
-                    return
-        self._detail_frame.hide()
+            if has_selection:
+                name_item = self._meeting_table.item(row, 1)
+                if name_item:
+                    meeting_id = name_item.data(Qt.UserRole)
+                    if meeting_id is not None:
+                        self.meeting_selected.emit(meeting_id)
+                        self._show_detail(meeting_id)
+                        return
+            self._detail_frame.hide()
 
     def _on_item_double_clicked(self, row: int, col: int):
-        name_item = self._meeting_table.item(row, 0)
+        name_item = self._meeting_table.item(row, 1)
         if name_item is None:
             return
         meeting_id = name_item.data(Qt.UserRole)
         if meeting_id is not None:
             meeting_data = self.build_meeting_data(meeting_id)
             self.view_stats_requested.emit(meeting_data)
-            self._open_stats_dialog(meeting_data)
 
     def _on_view_stats(self):
         meeting_data = self.get_selected_meeting()
         if meeting_data:
             self.view_stats_requested.emit(meeting_data)
-            self._open_stats_dialog(meeting_data)
 
-    def _on_export(self):
-        row = self._meeting_table.currentRow()
-        if row < 0:
-            return
-        name_item = self._meeting_table.item(row, 0)
-        if name_item is None:
-            return
-        meeting_id = name_item.data(Qt.UserRole)
-        if meeting_id is None:
-            return
-        meeting_data = self.build_meeting_data(meeting_id)
-        if not meeting_data:
+    def _on_batch_export(self):
+        checked_ids = self._get_checked_meeting_ids()
+        if not checked_ids:
+            QMessageBox.warning(self, "提示", "请先勾选要导出的会议")
             return
 
-        menu = QMenu(self)
-        menu.setStyleSheet(
-            f"QMenu {{ background-color: #FFFFFF; color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_DEFAULT}; border-radius: 8px; "
-            f"padding: 4px; font-family: '{FONT_FAMILY}'; }}"
-            f"QMenu::item {{ padding: 6px 20px; border-radius: 4px; }}"
-            f"QMenu::item:selected {{ background-color: {BG_SURFACE}; }}"
-        )
-        csv_action = menu.addAction("\u5bfc\u51fa CSV")
-        excel_action = menu.addAction("\u5bfc\u51fa Excel")
-
-        action = menu.exec(
-            self._export_btn.mapToGlobal(self._export_btn.rect().bottomLeft())
-        )
-
-        if action == csv_action:
-            self._export_csv(meeting_data)
-        elif action == excel_action:
-            self._export_excel(meeting_data)
-
-    def _on_delete(self):
-        row = self._meeting_table.currentRow()
-        if row < 0:
-            return
-        name_item = self._meeting_table.item(row, 0)
-        if name_item is None:
-            return
-        meeting_id = name_item.data(Qt.UserRole)
-        if meeting_id is None:
+        dir_path = QFileDialog.getExistingDirectory(self, "\u9009\u62e9\u4fdd\u5b58\u8def\u5f84", os.path.expanduser("~"))
+        if not dir_path:
             return
 
+        # 确保目录路径存在且可访问
+        if not os.path.exists(dir_path):
+            try:
+                os.makedirs(dir_path, exist_ok=True)
+            except Exception as e:
+                QMessageBox.critical(self, "\u9009\u62e9\u8def\u5f84\u65e0\u6548", f"\u65e0\u6cd5\u521b\u5efa\u8be5\u76ee\u5f55: {str(e)}")
+                return
+
+        # 检查目录写入权限
+        import tempfile
+        try:
+            # 规范化路径，解决混合斜杠问题
+            dir_path = os.path.normpath(dir_path)
+            test_file = os.path.join(dir_path, f"temp_test_{os.getpid()}.txt")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+        except Exception as e:
+            import traceback
+            QMessageBox.critical(self, "\u6743\u9650\u4e0d\u8db3", f"\u65e0\u6cd5\u5199\u5165\u8be5\u76ee\u5f55: {str(e)}\n\n{traceback.format_exc()}\n\n\u8bf7\u9009\u62e9\u5176\u4ed6\u8def\u5f84\uff0c\u5982\u684c\u9762")
+            return
+
+        meetings_data = [self.build_meeting_data(meeting_id) for meeting_id in checked_ids]
+        meetings_data = [d for d in meetings_data if d]
+        if not meetings_data:
+            return
+
+        errors = []
+        for meeting_data in meetings_data:
+            date_str = meeting_data.get("meeting_date", "")
+            name = meeting_data.get("meeting_name", "")
+            date_part = date_str.replace("-", "").replace("/", "").replace(" ", "")[:8]
+            safe_name = "".join(c for c in name if c.isalnum() or c in "_ -").strip()
+            if not safe_name:
+                safe_name = "meeting"
+            default_name = f"{date_part}_{safe_name}.xlsx"
+            file_path = os.path.join(dir_path, default_name)
+            file_path = os.path.normpath(file_path)
+
+            try:
+                export_to_excel(meeting_data, file_path)
+            except Exception as e:
+                import traceback
+                errors.append(f"{meeting_data.get('meeting_name', 'unknown')}: {str(e)}\n{traceback.format_exc()}")
+
+        if errors:
+            error_msg = "\n".join(errors)
+            QMessageBox.warning(
+                self, "\u90e8\u5206\u5bfc\u51fa\u5931\u8d25",
+                f"\u4ee5\u4e0b\u4f1a\u8bae\u5bfc\u51fa\u5931\u8d25:\n\n{error_msg}"
+            )
+        elif len(meetings_data) == 1:
+            QMessageBox.information(self, "\u5bfc\u51fa\u6210\u529f", "\u4f1a\u8bae\u8bb0\u5f55\u5df2\u5bfc\u51fa")
+        else:
+            QMessageBox.information(self, "\u5bfc\u51fa\u6210\u529f", f"{len(meetings_data)} \u4e2a\u4f1a\u8bae\u8bb0\u5f55\u5df2\u5bfc\u51fa\u5230\u6307\u5b9a\u76ee\u5f55")
+
+    def _on_batch_delete(self):
+        checked_ids = self._get_checked_meeting_ids()
+        if not checked_ids:
+            QMessageBox.warning(self, "提示", "请先勾选要删除的会议")
+            return
+
+        count = len(checked_ids)
         reply = QMessageBox.question(
             self,
             "\u5220\u9664\u4f1a\u8bae",
-            "\u786e\u5b9a\u5220\u9664\u8be5\u4f1a\u8bae\u8bb0\u5f55\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u6062\u590d\u3002",
+            f"\u786e\u5b9a\u5220\u9664\u9009\u4e2d\u7684 {count} \u4e2a\u4f1a\u8bae\u8bb0\u5f55\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u6062\u590d\u3002",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            self._db.delete_meeting(meeting_id)
+            for meeting_id in checked_ids:
+                self._db.delete_meeting(meeting_id)
             self.refresh_list()
             self._detail_frame.hide()
 
-    def _open_stats_dialog(self, meeting_data: dict):
-        dialog = StatsDialog(meeting_data, self)
-        dialog.exec()
+    def _get_checked_meeting_ids(self):
+        checked_ids = []
+        for row in range(self._meeting_table.rowCount()):
+            chk_item = self._meeting_table.item(row, 0)
+            if chk_item and chk_item.checkState() == Qt.Checked:
+                name_item = self._meeting_table.item(row, 1)
+                if name_item:
+                    meeting_id = name_item.data(Qt.UserRole)
+                    if meeting_id is not None:
+                        checked_ids.append(meeting_id)
+        return checked_ids
 
-    def _export_csv(self, meeting_data: dict):
-        date_str = meeting_data.get("meeting_date", "")
-        name = meeting_data.get("meeting_name", "")
-        date_part = date_str.replace("-", "").replace("/", "").replace(" ", "")[:8]
-        safe_name = "".join(c for c in name if c.isalnum() or c in "_ -").strip()
-        if not safe_name:
-            safe_name = "meeting"
-        default_name = f"{date_part}_{safe_name}.csv"
 
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "\u5bfc\u51fa CSV", default_name, "CSV \u6587\u4ef6 (*.csv)"
-        )
-        if file_path:
-            try:
-                export_to_csv(meeting_data, file_path)
-            except Exception as e:
-                QMessageBox.critical(self, "\u5bfc\u51fa\u5931\u8d25", str(e))
-
-    def _export_excel(self, meeting_data: dict):
-        date_str = meeting_data.get("meeting_date", "")
-        name = meeting_data.get("meeting_name", "")
-        date_part = date_str.replace("-", "").replace("/", "").replace(" ", "")[:8]
-        safe_name = "".join(c for c in name if c.isalnum() or c in "_ -").strip()
-        if not safe_name:
-            safe_name = "meeting"
-        default_name = f"{date_part}_{safe_name}.xlsx"
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "\u5bfc\u51fa Excel", default_name, "Excel \u6587\u4ef6 (*.xlsx)"
-        )
-        if file_path:
-            try:
-                export_to_excel(meeting_data, file_path)
-            except Exception as e:
-                QMessageBox.critical(self, "\u5bfc\u51fa\u5931\u8d25", str(e))
 
     def _show_detail(self, meeting_id: int):
         meeting_data = self.build_meeting_data(meeting_id)

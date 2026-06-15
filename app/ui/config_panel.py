@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QRect, QModelIndex
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -12,13 +12,77 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSpinBox,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
     QInputDialog,
 )
+from PySide6.QtWidgets import QStyleOptionButton, QStyle
+from PySide6.QtGui import QPainter
+
+class CheckableHeaderView(QHeaderView):
+    checkbox_clicked = Signal(bool)
+    
+    def __init__(self, parent=None):
+        super().__init__(Qt.Horizontal, parent)
+        self._is_checked = False
+        self.setSectionsClickable(True)
+        
+    def paintSection(self, painter, rect, logicalIndex):
+        super().paintSection(painter, rect, logicalIndex)
+        if logicalIndex == 0:
+            # 计算和表格单元格中复选框相同的位置
+            y_offset = 10 + 4  # 往下移4px
+            x_offset = 5  # 往右移5px
+            opt = QStyleOptionButton()
+            opt.rect = QRect(rect.x() + (rect.width() - 16) // 2 + x_offset, rect.y() + y_offset, 16, 16)
+            opt.state = QStyle.State_Enabled | (QStyle.State_On if self._is_checked else QStyle.State_Off)
+            self.style().drawControl(QStyle.CE_CheckBox, opt, painter)
+            
+    def mousePressEvent(self, event):
+        index = self.logicalIndexAt(event.pos())
+        if index == 0:
+            self._is_checked = not self._is_checked
+            self.checkbox_clicked.emit(self._is_checked)
+            self.updateSection(0)
+        else:
+            super().mousePressEvent(event)
+            
+    def is_all_checked(self):
+        return self._is_checked
+        
+    def set_all_checked(self, checked):
+        if self._is_checked != checked:
+            self._is_checked = checked
+            self.updateSection(0)
+
+class NoClippingDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QLineEdit):
+            editor.setStyleSheet("""
+                QLineEdit {
+                    border: none;
+                    background-color: #FFFFFF;
+                    padding: 0px 6px;
+                    font-size: 15px;
+                    font-family: "Microsoft YaHei", "Inter", "Segoe UI", sans-serif;
+                }
+            """)
+            editor.setFixedHeight(50)
+            
+            col = index.column()
+            if col in (2, 3):
+                editor.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+            else:
+                editor.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        return editor
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)
 
 from app.core.database import DatabaseManager
 from app.ui.theme import (
@@ -221,8 +285,6 @@ class ConfigPanel(QWidget):
         else:
             self._default_presentation = 10
             self._default_qa = 5
-        self._presentation_spin.setValue(self._default_presentation)
-        self._qa_spin.setValue(self._default_qa)
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -255,8 +317,11 @@ class ConfigPanel(QWidget):
         main_layout.addWidget(self._empty_label, 1)
 
         self._topic_list = QTableWidget()
-        self._topic_list.setColumnCount(3)
-        self._topic_list.horizontalHeader().setVisible(False)
+        self._topic_list.setColumnCount(4)
+        self._topic_list.setHorizontalHeaderLabels(["", "议题", "汇报时间（分钟）", "讨论时间（分钟）"])
+        self._topic_checkable_header = CheckableHeaderView(self._topic_list)
+        self._topic_list.setHorizontalHeader(self._topic_checkable_header)
+        self._topic_checkable_header.checkbox_clicked.connect(self._on_header_clicked)
         self._topic_list.verticalHeader().setVisible(False)
         self._topic_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._topic_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -267,7 +332,9 @@ class ConfigPanel(QWidget):
         self._topic_list.setAcceptDrops(True)
         self._topic_list.setDropIndicatorShown(True)
         self._topic_list.setShowGrid(False)
-        self._topic_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._topic_list.verticalHeader().setDefaultSectionSize(50)
+        self._topic_list.setItemDelegate(NoClippingDelegate())
+        self._topic_list.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked | QAbstractItemView.EditKeyPressed)
         self._topic_list.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.Fixed
         )
@@ -278,6 +345,9 @@ class ConfigPanel(QWidget):
         self._topic_list.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeToContents
         )
+        self._topic_list.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeToContents
+        )
         self._topic_list.setStyleSheet(
             f"QTableWidget {{ background-color: #FFFFFF; "
             f"border: 1px solid {BORDER_DEFAULT}; "
@@ -286,6 +356,9 @@ class ConfigPanel(QWidget):
             f"QTableWidget::item:selected {{ "
             f"background-color: {PRIMARY_LIGHT}; color: {PRIMARY}; }}"
             f"QTableWidget::item:alternate {{ background-color: {BG_SURFACE}; }}"
+            f"QTableWidget QLineEdit {{ padding: 15px 6px; border: none; "
+            f"background-color: #FFFFFF; min-height: 50px; "
+            f"font-size: {FONT_SIZE_MEDIUM}px; font-family: '{FONT_FAMILY}'; }}"
         )
         self._topic_list.model().rowsMoved.connect(self._on_topics_reordered)
         self._topic_list.cellDoubleClicked.connect(self._on_topic_double_clicked)
@@ -293,66 +366,35 @@ class ConfigPanel(QWidget):
         self._topic_list.setVisible(False)
         main_layout.addWidget(self._topic_list, 1)
 
-        add_topic_label = QLabel("添加议题")
-        add_topic_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: {FONT_SIZE_SMALL}px; "
-            f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
-        )
-        main_layout.addWidget(add_topic_label)
-
-        editor_layout = QHBoxLayout()
-        editor_layout.setSpacing(8)
-
-        self._topic_name_edit = QLineEdit()
-        self._topic_name_edit.setPlaceholderText("议题名称")
-        editor_layout.addWidget(self._topic_name_edit, 2)
-
-        self._presentation_spin = QSpinBox()
-        self._presentation_spin.setRange(1, 999)
-        self._presentation_spin.setValue(self._default_presentation)
-        self._presentation_spin.setSuffix(" 分钟")
-        editor_layout.addWidget(self._presentation_spin)
-
-        self._qa_spin = QSpinBox()
-        self._qa_spin.setRange(1, 999)
-        self._qa_spin.setValue(self._default_qa)
-        self._qa_spin.setSuffix(" 分钟")
-        editor_layout.addWidget(self._qa_spin)
-
-        self._add_btn = QPushButton("添加")
-        self._add_btn.setObjectName("primaryBtn")
-        self._add_btn.clicked.connect(self._on_add_topic)
-        editor_layout.addWidget(self._add_btn)
-
-        main_layout.addLayout(editor_layout)
-
-        delete_row = QHBoxLayout()
-        delete_row.addStretch()
-        self._delete_btn = QPushButton("删除选中")
-        self._delete_btn.setObjectName("dangerBtn")
-        self._delete_btn.clicked.connect(self._on_delete_topic)
-        delete_row.addWidget(self._delete_btn)
-        main_layout.addLayout(delete_row)
-
-        template_layout = QHBoxLayout()
-        template_layout.setSpacing(8)
+        row1_layout = QHBoxLayout()
+        row1_layout.setSpacing(8)
 
         self._save_template_btn = QPushButton("保存会议计划")
         self._save_template_btn.setObjectName("secondaryBtn")
         self._save_template_btn.clicked.connect(self._on_save_template)
-        template_layout.addWidget(self._save_template_btn)
+        row1_layout.addWidget(self._save_template_btn)
 
         self._load_template_btn = QPushButton("加载会议计划")
         self._load_template_btn.setObjectName("secondaryBtn")
         self._load_template_btn.clicked.connect(self._on_load_template)
-        template_layout.addWidget(self._load_template_btn)
+        row1_layout.addWidget(self._load_template_btn)
 
         self._manage_template_btn = QPushButton("管理会议计划")
         self._manage_template_btn.setObjectName("secondaryBtn")
         self._manage_template_btn.clicked.connect(self._on_manage_template)
-        template_layout.addWidget(self._manage_template_btn)
+        row1_layout.addWidget(self._manage_template_btn)
 
-        main_layout.addLayout(template_layout)
+        self._delete_btn = QPushButton("删除选中")
+        self._delete_btn.setObjectName("dangerBtn")
+        self._delete_btn.clicked.connect(self._on_delete_topic)
+        row1_layout.addWidget(self._delete_btn)
+
+        self._add_btn = QPushButton("添加议题")
+        self._add_btn.setObjectName("primaryBtn")
+        self._add_btn.clicked.connect(self._on_add_topic)
+        row1_layout.addWidget(self._add_btn)
+
+        main_layout.addLayout(row1_layout)
 
         self._start_btn = QPushButton("开始会议")
         self._start_btn.setObjectName("primaryBtn")
@@ -381,51 +423,80 @@ class ConfigPanel(QWidget):
                 Qt.ItemIsEnabled | Qt.ItemIsSelectable
                 | Qt.ItemIsEditable | Qt.ItemIsDragEnabled
             )
-            name_item.setData(Qt.UserRole, topic_data)
             self._topic_list.setItem(i, 1, name_item)
 
-            time_text = (
-                f"汇报时间 {topic_data['presentation_minutes']}分钟  "
-                f"讨论时间 {topic_data['qa_minutes']}分钟"
+            pres_item = QTableWidgetItem(str(topic_data["presentation_minutes"]))
+            pres_item.setFlags(
+                Qt.ItemIsEnabled | Qt.ItemIsSelectable
+                | Qt.ItemIsEditable | Qt.ItemIsDragEnabled
             )
-            time_item = QTableWidgetItem(time_text)
-            time_item.setFlags(
-                Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsDragEnabled
+            pres_item.setTextAlignment(Qt.AlignCenter)
+            self._topic_list.setItem(i, 2, pres_item)
+
+            qa_item = QTableWidgetItem(str(topic_data["qa_minutes"]))
+            qa_item.setFlags(
+                Qt.ItemIsEnabled | Qt.ItemIsSelectable
+                | Qt.ItemIsEditable | Qt.ItemIsDragEnabled
             )
-            self._topic_list.setItem(i, 2, time_item)
+            qa_item.setTextAlignment(Qt.AlignCenter)
+            self._topic_list.setItem(i, 3, qa_item)
 
     def _on_topic_double_clicked(self, row: int, col: int):
-        if col == 1:
+        if col in (1, 2, 3):
             item = self._topic_list.item(row, col)
             if item:
                 self._topic_list.editItem(item)
 
     def _on_topic_cell_changed(self, row: int, col: int):
+        if row < 0 or row >= len(self._topics):
+            return
         if col == 1:
             item = self._topic_list.item(row, 1)
             if item:
-                topic_data = item.data(Qt.UserRole)
-                if topic_data:
-                    new_name = item.text().strip()
-                    if new_name:
-                        topic_data["name"] = new_name
+                new_name = item.text().strip()
+                if new_name:
+                    self._topics[row]["name"] = new_name
+                else:
+                    item.setText(self._topics[row]["name"])
+        elif col == 2:
+            item = self._topic_list.item(row, 2)
+            if item:
+                try:
+                    val = int(item.text().strip())
+                    if val > 0:
+                        self._topics[row]["presentation_minutes"] = val
                     else:
-                        item.setText(topic_data["name"])
+                        item.setText(str(self._topics[row]["presentation_minutes"]))
+                except ValueError:
+                    item.setText(str(self._topics[row]["presentation_minutes"]))
+        elif col == 3:
+            item = self._topic_list.item(row, 3)
+            if item:
+                try:
+                    val = int(item.text().strip())
+                    if val > 0:
+                        self._topics[row]["qa_minutes"] = val
+                    else:
+                        item.setText(str(self._topics[row]["qa_minutes"]))
+                except ValueError:
+                    item.setText(str(self._topics[row]["qa_minutes"]))
+
+    def _on_header_clicked(self, checked: bool):
+        new_state = Qt.Checked if checked else Qt.Unchecked
+        for i in range(self._topic_list.rowCount()):
+            self._topic_list.item(i, 0).setCheckState(new_state)
 
     def _on_add_topic(self):
-        name = self._topic_name_edit.text().strip()
         self._topic_counter += 1
-        if not name:
-            name = f"议题 {self._topic_counter}"
+        name = f"议题 {self._topic_counter}"
 
         topic_data = {
             "name": name,
-            "presentation_minutes": self._presentation_spin.value(),
-            "qa_minutes": self._qa_spin.value(),
+            "presentation_minutes": self._default_presentation,
+            "qa_minutes": self._default_qa,
         }
         self._topics.append(topic_data)
         self._refresh_topic_list()
-        self._topic_name_edit.clear()
         self._topic_list.selectRow(self._topic_list.rowCount() - 1)
 
     def _on_delete_topic(self):
@@ -454,10 +525,17 @@ class ConfigPanel(QWidget):
         new_topics = []
         for i in range(self._topic_list.rowCount()):
             name_item = self._topic_list.item(i, 1)
+            pres_item = self._topic_list.item(i, 2)
+            qa_item = self._topic_list.item(i, 3)
             if name_item:
-                topic_data = name_item.data(Qt.UserRole)
-                if topic_data:
-                    new_topics.append(dict(topic_data))
+                name = name_item.text().strip()
+                pres = int(pres_item.text().strip()) if pres_item else self._default_presentation
+                qa = int(qa_item.text().strip()) if qa_item else self._default_qa
+                new_topics.append({
+                    "name": name,
+                    "presentation_minutes": pres,
+                    "qa_minutes": qa,
+                })
         self._topics = new_topics
 
     def _on_save_template(self):
@@ -465,13 +543,14 @@ class ConfigPanel(QWidget):
             QMessageBox.warning(self, "提示", "当前没有议题可保存")
             return
 
+        from datetime import datetime
+        name = self._meeting_name_edit.text().strip()
+        if not name:
+            name = datetime.now().strftime("%Y%m%d_%H%M%S")
+
         if self._editing_template_id is not None:
-            new_name = self._meeting_name_edit.text().strip()
-            if not new_name:
-                QMessageBox.warning(self, "提示", "请输入会议名称")
-                return
             self._db.delete_template_topics(self._editing_template_id)
-            self._db.update_template(self._editing_template_id, new_name)
+            self._db.update_template(self._editing_template_id, name)
             for i, topic_data in enumerate(self._topics):
                 self._db.create_template_topic(
                     self._editing_template_id, i,
@@ -487,10 +566,6 @@ class ConfigPanel(QWidget):
             self._clear_meeting_form()
             return
 
-        name = self._meeting_name_edit.text().strip()
-        if not name:
-            QMessageBox.warning(self, "提示", "请先输入会议名称")
-            return
         template = self._db.create_template(name)
         for i, topic_data in enumerate(self._topics):
             self._db.create_template_topic(
@@ -558,14 +633,15 @@ class ConfigPanel(QWidget):
         )
 
     def _on_start_meeting(self):
+        from datetime import datetime
         meeting_name = self._meeting_name_edit.text().strip()
         if not meeting_name:
-            QMessageBox.warning(self, "提示", "请输入会议名称")
-            return
+            meeting_name = datetime.now().strftime("%Y%m%d_%H%M%S")
         if not self._topics:
             QMessageBox.warning(self, "提示", "请至少添加一个议题")
             return
         config = self.get_meeting_config()
+        config["name"] = meeting_name
         print("[DEBUG] ConfigPanel emitting meeting_ready:", config)
         self.meeting_ready.emit(config)
         self._clear_meeting_form()
@@ -578,8 +654,6 @@ class ConfigPanel(QWidget):
         self._editing_template_name = ""
         self._save_template_btn.setText("保存会议计划")
         self._save_template_btn.setStyleSheet("")
-        self._presentation_spin.setValue(self._default_presentation)
-        self._qa_spin.setValue(self._default_qa)
         self._refresh_topic_list()
 
     def get_meeting_config(self) -> dict:

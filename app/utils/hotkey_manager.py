@@ -22,6 +22,7 @@ HOTKEY_START_PAUSE = 1
 HOTKEY_RESET = 2
 HOTKEY_NEXT_PHASE = 3
 HOTKEY_PREV_PHASE = 4
+HOTKEY_TOGGLE_FLOAT = 5
 
 DEFAULT_HOTKEYS = {
     HOTKEY_START_PAUSE: (0, VK_F5),
@@ -38,10 +39,13 @@ class _NativeEventFilter(QAbstractNativeEventFilter):
 
     def nativeEventFilter(self, eventType, message):
         if eventType == b"windows_generic_MSG":
-            msg = ctypes.wintypes.MSG.from_address(int(message))
-            if msg.message == WM_HOTKEY:
-                self._callback(msg.wParam)
-                return True
+            try:
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+                if msg.message == WM_HOTKEY:
+                    self._callback(msg.wParam)
+                    return True
+            except Exception:
+                pass
         return False
 
 

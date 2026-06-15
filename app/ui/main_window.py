@@ -1,7 +1,7 @@
 import json
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -24,6 +24,7 @@ from app.ui.settings_dialog import (
     DEFAULT_DISPLAY,
     DEFAULT_HOTKEYS,
     DEFAULT_SOUNDS,
+    SETTING_KEY_DEFAULTS,
     SETTING_KEY_DISPLAY,
     SETTING_KEY_HOTKEYS,
     SETTING_KEY_SOUNDS,
@@ -52,6 +53,7 @@ from app.utils.hotkey_manager import (
     HOTKEY_PREV_PHASE,
     HOTKEY_RESET,
     HOTKEY_START_PAUSE,
+    HOTKEY_TOGGLE_FLOAT,
     HotkeyManager,
 )
 
@@ -81,10 +83,14 @@ class _NavBar(QWidget):
         layout.setContentsMargins(16, 0, 16, 0)
         layout.setSpacing(4)
 
-        brand = QLabel("GAC Timer")
+        brand = QLabel()
+        brand_pixmap = QPixmap("C:/Users/GAC-JD/Documents/M-Timer/light-horizontal-chinese-slogan-RGB_副本.png")
+        brand_pixmap = brand_pixmap.scaledToHeight(32, Qt.SmoothTransformation)
+        brand.setPixmap(brand_pixmap)
+        brand.setFixedHeight(32)
+        brand.setAlignment(Qt.AlignVCenter)
         brand.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: bold; "
-            f"background: transparent; border: none; padding-right: 16px;"
+            "background: transparent; border: none; padding-right: 16px;"
         )
         layout.addWidget(brand)
         layout.addStretch()
@@ -178,10 +184,7 @@ class MainWindow(QWidget):
 
         self._setup_ui()
         self._connect_signals()
-        self._register_hotkeys()
         self._load_audio_settings()
-        self._create_float_timer()
-        self._recover_in_progress_meeting()
 
         self.setWindowTitle("GAC Timer")
         self.setMinimumSize(900, 650)
@@ -221,6 +224,7 @@ class MainWindow(QWidget):
         page_layout.setSpacing(24)
 
         left_widget = QWidget()
+        left_widget.setMaximumWidth(600)
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(12)
@@ -236,6 +240,7 @@ class MainWindow(QWidget):
 
         self._topic_name_label = QLabel()
         self._topic_name_label.setAlignment(Qt.AlignCenter)
+        self._topic_name_label.setWordWrap(True)
         self._topic_name_label.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 20px; font-weight: 600; "
             f"line-height: 1.40; letter-spacing: -0.125px; "
@@ -262,11 +267,10 @@ class MainWindow(QWidget):
         stats_container = QWidget()
         stats_layout = QHBoxLayout(stats_container)
         stats_layout.setContentsMargins(0, 8, 0, 8)
-        stats_layout.setSpacing(32)
+        stats_layout.setSpacing(64)
 
         for title_text, value_init, label_attr in [
             ("计划时间", "--:--", "_planned_time_label"),
-            ("剩余时间", "--:--", "_remaining_time_label"),
             ("状态", "待开始", "_status_label"),
         ]:
             col = QWidget()
@@ -374,7 +378,7 @@ class MainWindow(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        topic_header = QLabel("议题进度")
+        topic_header = QLabel("议题计划")
         topic_header.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 14px; font-weight: bold; "
             f"background: transparent; border: none;"
@@ -393,16 +397,11 @@ class MainWindow(QWidget):
         self._topic_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
         self._topic_table.setColumnWidth(3, 50)
         self._topic_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
-        self._topic_table.setColumnWidth(4, 50)
+        self._topic_table.setColumnWidth(4, 80)
         self._topic_table.verticalHeader().setVisible(False)
+        self._topic_table.verticalHeader().setDefaultSectionSize(50)
         self._topic_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._topic_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self._topic_table.setDragDropMode(QTableWidget.InternalMove)
-        self._topic_table.setDragDropOverwriteMode(False)
-        self._topic_table.setDragEnabled(True)
-        self._topic_table.setAcceptDrops(True)
-        self._topic_table.setDropIndicatorShown(True)
-        self._topic_table.topic_order_changed.connect(self._on_topic_rows_reordered)
         right_layout.addWidget(self._topic_table, 1)
 
         page_layout.addWidget(left_widget, 1)
@@ -437,6 +436,7 @@ class MainWindow(QWidget):
             "reset": HOTKEY_RESET,
             "next_phase": HOTKEY_NEXT_PHASE,
             "prev_phase": HOTKEY_PREV_PHASE,
+            "toggle_float": HOTKEY_TOGGLE_FLOAT,
         }
 
         for action_key, hotkey_id in hotkey_map.items():
@@ -488,9 +488,9 @@ class MainWindow(QWidget):
         else:
             sounds = dict(DEFAULT_SOUNDS)
 
-        self._audio.set_selection("warning", sounds.get("warning_selection", "soft_chime"))
-        self._audio.set_selection("timeup", sounds.get("timeup_selection", "clear_bell"))
-        self._audio.set_selection("overtime", sounds.get("overtime_selection", "alert_beep"))
+        self._audio.set_selection("warning", sounds.get("warning", "soft_chime"))
+        self._audio.set_selection("timeup", sounds.get("timeup", "clear_bell"))
+        self._audio.set_selection("overtime", sounds.get("overtime", "alert_beep"))
 
     def _on_nav_changed(self, index):
         self._navbar.set_active(index)
@@ -522,10 +522,8 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "错误", f"无法打开设置窗口：{e}")
 
     def _on_meeting_ready(self, config: dict):
-        print("[DEBUG] _on_meeting_ready called, config:", config)
         meeting = self._db.create_meeting(config["name"], status="draft")
         self._current_meeting_id = meeting.id
-        print("[DEBUG] meeting created, id:", meeting.id)
 
         for i, topic_data in enumerate(config["topics"]):
             self._db.create_topic(
@@ -552,12 +550,11 @@ class MainWindow(QWidget):
         self._last_overtime_minute = 0
         self._navbar.set_float_checked(True)
 
-        print("[DEBUG] Calling start_meeting, meeting_id =", meeting.id)
         self._controller.start_meeting(meeting.id)
-        print("[DEBUG] start_meeting done, calling start_current_phase")
         self._controller.start_current_phase()
-        print("[DEBUG] start_current_phase done")
         self._pause_resume_btn.setText("暂停")
+        self.activateWindow()
+        self.raise_()
 
         info = self._controller.get_current_info()
         self._topic_name_label.setText(info.get("topic_name", ""))
@@ -575,10 +572,7 @@ class MainWindow(QWidget):
             self._float_timer.show()
             self._navbar.set_float_checked(True)
 
-        print("[DEBUG] _on_meeting_ready done, stacked index:", self._stacked.currentIndex())
-
     def _on_timer_updated(self, tick_data: dict):
-        print("[DEBUG] _on_timer_updated state=", tick_data.get("state"), "remaining=", tick_data.get("remaining_seconds"))
         progress = tick_data.get("progress", 0.0)
         remaining = tick_data.get("remaining_seconds", 0.0)
         overtime = tick_data.get("overtime_seconds", 0.0)
@@ -608,9 +602,6 @@ class MainWindow(QWidget):
 
         planned_seconds = tick_data.get("planned_seconds", 0)
         self._planned_time_label.setText(format_time(planned_seconds))
-        self._remaining_time_label.setText(
-            format_time(remaining) if (not is_overtime and remaining > 0) else "--:--"
-        )
 
         if is_overtime:
             self._status_label.setStyleSheet(
@@ -623,7 +614,7 @@ class MainWindow(QWidget):
                 f"color: {WARNING}; font-size: 16px; font-weight: 400; "
                 f"background: transparent; border: none;"
             )
-            self._status_label.setText("已暂停")
+            self._status_label.setText("暂停")
         elif is_countdown:
             info = self._controller.get_current_info()
             current_phase = info.get("phase", "presentation")
@@ -659,30 +650,26 @@ class MainWindow(QWidget):
         if is_countdown and not is_overtime and not self._remaining_minutes_triggered:
             raw = self._db.get_setting(SETTING_KEY_SOUNDS)
             remaining_minutes = 5
-            warning_selection = "soft_chime"
             if raw:
                 try:
                     sounds = json.loads(raw)
                     remaining_minutes = sounds.get("remaining_minutes", 5)
-                    warning_selection = sounds.get("warning_selection", "soft_chime")
                 except (json.JSONDecodeError, TypeError):
                     pass
-            if warning_selection != "none" and remaining <= remaining_minutes * 60 and remaining > 30:
+            if self._audio.is_enabled("warning") and 0 < remaining <= remaining_minutes * 60:
                 self._remaining_minutes_triggered = True
                 self._audio.play("warning")
 
         if is_overtime:
             raw = self._db.get_setting(SETTING_KEY_SOUNDS)
             overtime_minutes = 5
-            overtime_selection = "alert_beep"
             if raw:
                 try:
                     sounds = json.loads(raw)
                     overtime_minutes = sounds.get("overtime_minutes", 5)
-                    overtime_selection = sounds.get("overtime_selection", "alert_beep")
                 except (json.JSONDecodeError, TypeError):
                     pass
-            if overtime_selection != "none":
+            if self._audio.is_enabled("overtime"):
                 current_overtime_minute = int(overtime) // 60
                 if current_overtime_minute > 0 and current_overtime_minute > self._last_overtime_minute and current_overtime_minute % overtime_minutes == 0:
                     self._last_overtime_minute = current_overtime_minute
@@ -710,7 +697,6 @@ class MainWindow(QWidget):
             self._float_timer.set_topic_info(info.get("topic_name", ""), phase)
 
     def _on_meeting_completed(self):
-        self._navbar.set_float_checked(False)
         self._navbar.set_meeting_nav_visible(False)
 
         if self._float_timer:
@@ -723,7 +709,6 @@ class MainWindow(QWidget):
                 "is_countdown": False,
                 "state": "idle",
             })
-            self._float_timer.hide()
 
         meeting_data = self._build_current_meeting_data()
         self._current_meeting_id = None
@@ -767,10 +752,22 @@ class MainWindow(QWidget):
             self._controller.next_phase()
         self._pause_resume_btn.setText("暂停")
 
+    def _show_detached_message_box(self, title, message):
+        """显示不依附主窗口的消息框，防止主窗口被带到前面"""
+        from PySide6.QtWidgets import QMessageBox
+        
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setDefaultButton(QMessageBox.No)
+        # 设置窗口标志，防止它影响主窗口
+        msg_box.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        return msg_box.exec()
+
     def _on_reset_phase(self):
-        reply = QMessageBox.question(
-            self, "重置阶段", "确定重置当前阶段计时？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        reply = self._show_detached_message_box(
+            "重置阶段", "确定重置当前阶段计时？"
         )
         if reply == QMessageBox.Yes:
             self._controller.reset_current_phase()
@@ -778,16 +775,17 @@ class MainWindow(QWidget):
             self._overtime_triggered = False
             self._remaining_minutes_triggered = False
             self._last_overtime_minute = 0
-            self._pause_resume_btn.setText("开始")
+            # 重置后立即开始计时
+            self._controller.start_current_phase()
+            self._pause_resume_btn.setText("暂停")
 
     def _on_start_phase(self):
         self._controller.start_current_phase()
         self._pause_resume_btn.setText("暂停")
 
     def _on_end_meeting(self):
-        reply = QMessageBox.question(
-            self, "结束会议", "确定结束会议？未完成的阶段将标记为已完成。",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        reply = self._show_detached_message_box(
+            "结束会议", "确定结束会议？未完成的阶段将标记为已完成。"
         )
         if reply == QMessageBox.Yes:
             self._controller.complete_meeting()
@@ -795,6 +793,12 @@ class MainWindow(QWidget):
     def _create_float_timer(self):
         self._float_timer = FloatTimer()
         self._float_timer.close_clicked.connect(self._on_float_close)
+        self._float_timer.pause_requested.connect(self._on_pause_resume)
+        self._float_timer.reset_requested.connect(self._on_reset_phase)
+        self._float_timer.enter_discussion_requested.connect(self._on_enter_discussion)
+        self._float_timer.next_topic_requested.connect(self._on_next_topic)
+        self._float_timer.add_temp_topic_requested.connect(self._on_add_temp_topic)
+        self._float_timer.end_meeting_requested.connect(self._on_end_meeting)
 
         self._apply_float_display_settings()
         self._float_timer.show()
@@ -820,17 +824,24 @@ class MainWindow(QWidget):
             self._on_next_phase()
         elif hotkey_id == HOTKEY_PREV_PHASE:
             self._on_prev_phase()
+        elif hotkey_id == HOTKEY_TOGGLE_FLOAT:
+            if self._float_timer:
+                if self._float_timer.isVisible():
+                    self._float_timer.hide()
+                    self._navbar.set_float_checked(False)
+                else:
+                    self._float_timer.show()
+                    self._navbar.set_float_checked(True)
 
     def _on_view_stats(self, meeting_data: dict):
         dialog = StatsDialog(meeting_data, self)
-        if dialog.exec() == 0:
-            if self._stacked.currentIndex() == 1:
-                self._stacked.setCurrentIndex(0)
-                self._navbar.set_active(0)
-                self._navbar.set_float_checked(False)
-                self._navbar.set_float_checked(False)
-                if self._float_timer:
-                    self._float_timer.hide()
+        dialog.exec()
+        if self._stacked.currentIndex() == 1:
+            self._stacked.setCurrentIndex(0)
+            self._navbar.set_active(0)
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
 
     def _on_settings_changed(self):
         self._register_hotkeys()
@@ -852,40 +863,65 @@ class MainWindow(QWidget):
         self._float_timer.set_opacity(display.get("opacity", 85))
         self._float_timer.set_size(display.get("float_size", "medium"))
 
+        raw_sounds = self._db.get_setting(SETTING_KEY_SOUNDS)
+        if raw_sounds:
+            try:
+                sounds = json.loads(raw_sounds)
+            except (json.JSONDecodeError, TypeError):
+                sounds = dict(DEFAULT_SOUNDS)
+        else:
+            sounds = dict(DEFAULT_SOUNDS)
+        self._float_timer.set_reminder_config(
+            sounds.get("remaining_minutes", 5),
+            sounds.get("overtime_minutes", 5),
+        )
+
     def _recover_in_progress_meeting(self):
         meetings = self._db.list_meetings(status="in_progress")
         if not meetings:
             return
 
         meeting = meetings[0]
-        reply = QMessageBox.question(
-            self, "恢复会议",
-            f"检测到未完成的会议：{meeting.name}，是否恢复？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
-        )
-        if reply == QMessageBox.Yes:
-            self._current_meeting_id = meeting.id
-            self._meeting_name_label.setText(meeting.name)
-            self._warning_triggered = False
-            self._overtime_triggered = False
-            self._navbar.set_float_checked(True)
+        # 使用非模态对话框，不阻塞主窗口事件循环
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("恢复会议")
+        msg_box.setText(f"检测到未完成的会议：{meeting.name}，是否恢复？")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setDefaultButton(QMessageBox.Yes)
+        msg_box.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        msg_box.setModal(False)
 
-            self._controller.recover_meeting(meeting.id)
-
-            info = self._controller.get_current_info()
-            self._topic_name_label.setText(info.get("topic_name", ""))
-            phase_display = "汇报时间" if info.get("phase") == "presentation" else "讨论时间"
-            self._phase_name_label.setText(phase_display)
-
-            self._refresh_topic_table()
-
-            self._stacked.setCurrentIndex(1)
-            self._navbar.set_active(1)
-            self._navbar.set_meeting_nav_visible(True)
-            if self._float_timer:
-                self._float_timer.set_topic_info(info.get("topic_name", ""), info.get("phase", "presentation"))
-                self._float_timer.show()
+        def on_finished(result):
+            if result == QMessageBox.Yes:
+                self._current_meeting_id = meeting.id
+                self._meeting_name_label.setText(meeting.name)
+                self._warning_triggered = False
+                self._overtime_triggered = False
                 self._navbar.set_float_checked(True)
+
+                self._controller.recover_meeting(meeting.id)
+
+                engine = self._controller.engine
+                is_paused = engine.state in (TimerEngine.PAUSED_CD, TimerEngine.PAUSED_OT)
+                self._pause_resume_btn.setText("继续" if is_paused else "暂停")
+
+                info = self._controller.get_current_info()
+                self._topic_name_label.setText(info.get("topic_name", ""))
+                phase_display = "汇报时间" if info.get("phase") == "presentation" else "讨论时间"
+                self._phase_name_label.setText(phase_display)
+
+                self._refresh_topic_table()
+
+                self._stacked.setCurrentIndex(1)
+                self._navbar.set_active(1)
+                self._navbar.set_meeting_nav_visible(True)
+                if self._float_timer:
+                    self._float_timer.set_topic_info(info.get("topic_name", ""), info.get("phase", "presentation"))
+                    self._float_timer.show()
+                    self._navbar.set_float_checked(True)
+
+        msg_box.finished.connect(on_finished)
+        msg_box.show()
 
     def _refresh_topic_table(self):
         if self._current_meeting_id is None:
@@ -902,38 +938,37 @@ class MainWindow(QWidget):
             seq_item = QTableWidgetItem(str(topic.sort_order + 1))
             seq_item.setTextAlignment(Qt.AlignCenter)
             seq_item.setForeground(QColor(TEXT_MUTED))
+            seq_item.setFlags(seq_item.flags() & ~Qt.ItemIsSelectable)
             self._topic_table.setItem(row, 0, seq_item)
 
             name_item = QTableWidgetItem(topic.name)
             name_item.setForeground(self._get_topic_color(row, current_index))
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsSelectable)
             self._topic_table.setItem(row, 1, name_item)
 
             pres_status = self._get_phase_status(topic.id, "presentation", row, current_index, current_phase)
             pres_item = QTableWidgetItem(pres_status)
             pres_item.setTextAlignment(Qt.AlignCenter)
             pres_item.setForeground(self._get_status_color(pres_status))
+            pres_item.setFlags(pres_item.flags() & ~Qt.ItemIsSelectable)
             self._topic_table.setItem(row, 2, pres_item)
 
             qa_status = self._get_phase_status(topic.id, "qa", row, current_index, current_phase)
             qa_item = QTableWidgetItem(qa_status)
             qa_item.setTextAlignment(Qt.AlignCenter)
             qa_item.setForeground(self._get_status_color(qa_status))
+            qa_item.setFlags(qa_item.flags() & ~Qt.ItemIsSelectable)
             self._topic_table.setItem(row, 3, qa_item)
 
-            arrow_widget = self._create_arrow_buttons(row, len(topics))
+            arrow_widget = self._create_arrow_buttons(row, len(topics), current_index)
             self._topic_table.setCellWidget(row, 4, arrow_widget)
 
-            if row == current_index:
-                for col in range(5):
-                    item = self._topic_table.item(row, col)
-                    if item:
-                        item.setBackground(self._color_from_hex(PRIMARY_LIGHT))
-
-    def _create_arrow_buttons(self, row: int, total: int) -> QWidget:
+    def _create_arrow_buttons(self, row: int, total: int, current_index: int) -> QWidget:
         widget = QWidget()
+        widget.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(2, 1, 2, 1)
-        layout.setSpacing(2)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
         layout.setAlignment(Qt.AlignCenter)
 
         arrow_style = (
@@ -941,28 +976,31 @@ class MainWindow(QWidget):
             "  background: transparent;"
             "  color: #615D59;"
             "  border: none;"
-            "  padding: 2px 6px;"
+            "  padding: 0px 0px;"
             "  font-size: 12px;"
-            "  font-family: 'Segoe UI';"
+            "  font-family: 'Inter, Microsoft YaHei, Segoe UI';"
+            "  font-weight: normal;"
             "}"
             "QPushButton:hover {"
-            "  background-color: rgba(0,0,0,0.08);"
-            "  border-radius: 4px;"
+            "  color: #3B82F6;"
             "}"
             "QPushButton:pressed {"
-            "  background-color: rgba(0,0,0,0.04);"
+            "  color: #2563EB;"
+            "}"
+            "QPushButton:disabled {"
+            "  color: #ccc;"
             "}"
         )
 
-        up_btn = QPushButton("▲")
+        up_btn = QPushButton("上移")
         up_btn.setStyleSheet(arrow_style)
-        up_btn.setEnabled(row > 0)
+        up_btn.setEnabled(row > current_index)
         up_btn.clicked.connect(lambda checked=False, r=row: self._move_topic(r, r - 1))
         layout.addWidget(up_btn)
 
-        down_btn = QPushButton("▼")
+        down_btn = QPushButton("下移")
         down_btn.setStyleSheet(arrow_style)
-        down_btn.setEnabled(row < total - 1)
+        down_btn.setEnabled(row < total - 1 and row > current_index)
         down_btn.clicked.connect(lambda checked=False, r=row: self._move_topic(r, r + 1))
         layout.addWidget(down_btn)
 
@@ -1069,6 +1107,20 @@ class MainWindow(QWidget):
         self._controller.refresh_topics()
         self._refresh_topic_table()
 
+    def _get_default_times(self):
+        """从设置中读取默认汇报时间和讨论时间"""
+        raw = self._db.get_setting(SETTING_KEY_DEFAULTS)
+        if raw:
+            try:
+                defaults = json.loads(raw)
+                return (
+                    defaults.get("presentation_minutes", 10),
+                    defaults.get("qa_minutes", 5),
+                )
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return 10, 5
+
     def _on_add_temp_topic(self):
         if self._current_meeting_id is None:
             return
@@ -1076,9 +1128,15 @@ class MainWindow(QWidget):
         from PySide6.QtWidgets import (QDialog, QFormLayout, QLineEdit,
                                        QSpinBox, QComboBox, QDialogButtonBox)
 
-        dialog = QDialog(self)
+        # 从设置中读取默认时间
+        default_pres, default_qa = self._get_default_times()
+
+        # 创建不依附主窗口的对话框
+        dialog = QDialog()
         dialog.setWindowTitle("添加临时议题")
         dialog.setFixedSize(360, 280)
+        # 设置窗口标志，保持在前面但不影响主窗口
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         layout = QVBoxLayout(dialog)
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1092,13 +1150,13 @@ class MainWindow(QWidget):
 
         pres_spin = QSpinBox()
         pres_spin.setRange(1, 999)
-        pres_spin.setValue(10)
+        pres_spin.setValue(default_pres)
         pres_spin.setSuffix(" 分钟")
         form.addRow("汇报时间：", pres_spin)
 
         qa_spin = QSpinBox()
         qa_spin.setRange(1, 999)
-        qa_spin.setValue(5)
+        qa_spin.setValue(default_qa)
         qa_spin.setSuffix(" 分钟")
         form.addRow("讨论时间：", qa_spin)
 
@@ -1120,7 +1178,12 @@ class MainWindow(QWidget):
 
         name = name_input.text().strip()
         if not name:
-            QMessageBox.warning(self, "提示", "请输入议题名称")
+            # 使用独立的消息框
+            msg_box = QMessageBox()
+            msg_box.setWindowTitle("提示")
+            msg_box.setText("请输入议题名称")
+            msg_box.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+            msg_box.exec()
             return
 
         topics = self._db.get_topics_by_meeting(self._current_meeting_id)

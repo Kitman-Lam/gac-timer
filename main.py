@@ -70,6 +70,9 @@ def main():
 
     window = MainWindow()
     window.show()
+    window._register_hotkeys()
+    window._recover_in_progress_meeting()
+    window._create_float_timer()
 
     sys.exit(app.exec())
 

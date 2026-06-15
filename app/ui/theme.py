@@ -47,6 +47,7 @@ QPushButton {{
     padding: 8px 16px;
     font-size: {FONT_SIZE_MEDIUM}px;
     font-weight: 600;
+    outline: none;
 }}
 
 QPushButton:hover {{

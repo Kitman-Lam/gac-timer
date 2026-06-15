@@ -1,10 +1,21 @@
 import math
 import struct
 import tempfile
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QSoundEffect
+
+
+def get_sound_dir() -> Path:
+    """获取Sound文件夹路径"""
+    # 在应用程序目录下创建Sound文件夹
+    import os
+    app_dir = Path.cwd()  # 使用当前工作目录
+    sound_dir = app_dir / "Sound"
+    sound_dir.mkdir(exist_ok=True)
+    return sound_dir
 
 
 SOUND_PRESETS = {
@@ -240,6 +251,7 @@ class AudioPlayer:
         self._init_all_sounds()
 
     def _init_all_sounds(self):
+        # 初始化预设声音
         for preset_key, generator in PRESET_GENERATORS.items():
             wav_data = generator()
             wav_path = Path(self._temp_dir) / f"{preset_key}.wav"
@@ -249,6 +261,42 @@ class AudioPlayer:
             effect.setSource(QUrl.fromLocalFile(str(wav_path)))
             effect.setVolume(0.8)
             self._sounds[preset_key] = effect
+        
+        # 加载Sound文件夹中的自定义声音
+        self._load_custom_sounds()
+
+    def _load_custom_sounds(self):
+        """加载Sound文件夹中的自定义WAV文件"""
+        sound_dir = get_sound_dir()
+        if not sound_dir.exists():
+            return
+
+        wav_files = list(sound_dir.glob("*.wav"))
+        for wav_file in wav_files:
+            try:
+                file_key = f"custom_{wav_file.stem}"
+                if file_key in self._sounds:
+                    continue
+
+                effect = QSoundEffect()
+                effect.setSource(QUrl.fromLocalFile(str(wav_file)))
+                effect.setVolume(0.8)
+                self._sounds[file_key] = effect
+                SOUND_PRESETS[file_key] = wav_file.stem
+            except Exception as e:
+                print(f"[AudioPlayer] Failed to load sound {wav_file}: {e}")
+
+    def reload_custom_sounds(self):
+        """重新加载自定义声音"""
+        # 清除现有的自定义声音
+        keys_to_remove = [k for k in SOUND_PRESETS if k.startswith("custom_")]
+        for key in keys_to_remove:
+            if key in self._sounds:
+                del self._sounds[key]
+            del SOUND_PRESETS[key]
+        
+        # 重新加载
+        self._load_custom_sounds()
 
     def play(self, sound_type: str):
         selection = self._selections.get(sound_type, "none")
