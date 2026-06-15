@@ -22,14 +22,15 @@ from app.ui.float_widget import FloatTimer
 from app.ui.history_panel import HistoryPanel
 from app.ui.settings_dialog import (
     DEFAULT_DISPLAY,
-    DEFAULT_HOTKEYS,
     DEFAULT_SOUNDS,
     SETTING_KEY_DEFAULTS,
     SETTING_KEY_DISPLAY,
-    SETTING_KEY_HOTKEYS,
     SETTING_KEY_SOUNDS,
     SettingsDialog,
 )
+from app.utils.hotkey_manager import DEFAULT_HOTKEYS
+
+SETTING_KEY_HOTKEYS = "hotkeys"
 from app.ui.stats_dialog import StatsDialog
 from app.ui.theme import (
     BG_BASE,
@@ -49,11 +50,10 @@ from app.ui.theme import (
 from app.ui.timer_circle import TimerCircle
 from app.utils.audio_player import AudioPlayer
 from app.utils.hotkey_manager import (
-    HOTKEY_NEXT_PHASE,
-    HOTKEY_PREV_PHASE,
-    HOTKEY_RESET,
-    HOTKEY_START_PAUSE,
     HOTKEY_TOGGLE_FLOAT,
+    HOTKEY_FLOAT_SMALL,
+    HOTKEY_FLOAT_MEDIUM,
+    HOTKEY_FLOAT_LARGE,
     HotkeyManager,
 )
 
@@ -84,13 +84,19 @@ class _NavBar(QWidget):
         layout.setSpacing(4)
 
         brand = QLabel()
-        brand_pixmap = QPixmap("C:/Users/GAC-JD/Documents/M-Timer/light-horizontal-chinese-slogan-RGB_副本.png")
+        import sys
+        import os
+        if hasattr(sys, '_MEIPASS'):
+            logo_path = os.path.join(sys._MEIPASS, 'LOGO.png')
+        else:
+            logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'LOGO.png')
+        brand_pixmap = QPixmap(logo_path)
         brand_pixmap = brand_pixmap.scaledToHeight(32, Qt.SmoothTransformation)
         brand.setPixmap(brand_pixmap)
         brand.setFixedHeight(32)
         brand.setAlignment(Qt.AlignVCenter)
         brand.setStyleSheet(
-            "background: transparent; border: none; padding-right: 16px;"
+            "background: transparent; border: none;"
         )
         layout.addWidget(brand)
         layout.addStretch()
@@ -98,6 +104,7 @@ class _NavBar(QWidget):
         for text, idx in [("会议安排", 0), ("当前会议", 1), ("历史记录", 2)]:
             btn = QPushButton(text)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setFixedWidth(100)
             btn.clicked.connect(lambda checked, i=idx: self._on_nav_clicked(i))
             layout.addWidget(btn)
             self._nav_buttons.append((btn, idx))
@@ -109,7 +116,7 @@ class _NavBar(QWidget):
         self._settings_btn.clicked.connect(self.settings_clicked.emit)
         layout.addWidget(self._settings_btn)
 
-        self._float_btn = QPushButton("悬浮模式")
+        self._float_btn = QPushButton("悬浮窗口")
         self._float_btn.setObjectName("primaryBtn")
         self._float_btn.setCheckable(True)
         self._float_btn.setCursor(Qt.PointingHandCursor)
@@ -186,7 +193,7 @@ class MainWindow(QWidget):
         self._connect_signals()
         self._load_audio_settings()
 
-        self.setWindowTitle("GAC Timer")
+        self.setWindowTitle("会帮手")
         self.setMinimumSize(900, 650)
 
     def _setup_ui(self):
@@ -307,18 +314,21 @@ class MainWindow(QWidget):
         secondary_style = (
             "QPushButton {"
             "  background-color: rgba(0, 0, 0, 0.05);"
-            "  color: #000000;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  padding: 8px 18px;"
-            "  border-radius: 9999px;"
+            "  color: rgba(0, 0, 0, 0.95);"
+            "  border: 1px solid transparent;"
+            "  padding: 6px 8px;"
+            "  border-radius: 6px;"
             "  font-size: 14px;"
-            "  font-weight: 600;"
+            "  font-weight: 500;"
+            "  min-width: 80px;"
+            "  height: 32px;"
+            "  max-height: 32px;"
             "}"
             "QPushButton:hover {"
             "  background-color: rgba(0, 0, 0, 0.08);"
             "}"
             "QPushButton:pressed {"
-            "  background-color: rgba(0, 0, 0, 0.03);"
+            "  background-color: rgba(0, 0, 0, 0.12);"
             "}"
         )
 
@@ -345,31 +355,12 @@ class MainWindow(QWidget):
         left_layout.addLayout(btn_row1)
 
         self._add_temp_topic_btn = QPushButton("+ 临时议题")
-        self._add_temp_topic_btn.setStyleSheet(
-            secondary_style + "QPushButton { padding: 10px 18px; }"
-        )
+        self._add_temp_topic_btn.setStyleSheet(secondary_style)
         self._add_temp_topic_btn.clicked.connect(self._on_add_temp_topic)
         left_layout.addWidget(self._add_temp_topic_btn)
 
         self._end_meeting_btn = QPushButton("结束会议")
-        end_style = (
-            "QPushButton {"
-            "  background-color: #DD5B00;"
-            "  color: #FFFFFF;"
-            "  border: none;"
-            "  padding: 8px 18px;"
-            "  border-radius: 9999px;"
-            "  font-size: 14px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover {"
-            "  background-color: #C75000;"
-            "}"
-            "QPushButton:pressed {"
-            "  background-color: #B04800;"
-            "}"
-        )
-        self._end_meeting_btn.setStyleSheet(end_style)
+        self._end_meeting_btn.setObjectName("primaryBtn")
         self._end_meeting_btn.clicked.connect(self._on_end_meeting)
         left_layout.addWidget(self._end_meeting_btn)
 
@@ -418,48 +409,13 @@ class MainWindow(QWidget):
         self._controller.meeting_completed.connect(self._on_meeting_completed)
 
         self._hotkey_manager.hotkey_pressed.connect(self._on_hotkey)
+        self._register_hotkeys()
 
     def _register_hotkeys(self):
-        raw = self._db.get_setting(SETTING_KEY_HOTKEYS)
-        if raw:
-            try:
-                hotkeys = json.loads(raw)
-            except (json.JSONDecodeError, TypeError):
-                hotkeys = dict(DEFAULT_HOTKEYS)
-        else:
-            hotkeys = dict(DEFAULT_HOTKEYS)
-
         self._hotkey_manager.unregister_all()
 
-        hotkey_map = {
-            "start_pause": HOTKEY_START_PAUSE,
-            "reset": HOTKEY_RESET,
-            "next_phase": HOTKEY_NEXT_PHASE,
-            "prev_phase": HOTKEY_PREV_PHASE,
-            "toggle_float": HOTKEY_TOGGLE_FLOAT,
-        }
-
-        for action_key, hotkey_id in hotkey_map.items():
-            combo = hotkeys.get(action_key, "")
-            if not combo:
-                continue
-            parts = combo.split("+")
-            modifier = 0
-            key = 0
-            for part in parts:
-                p = part.strip().lower()
-                if p == "ctrl":
-                    modifier |= 0x0002
-                elif p == "alt":
-                    modifier |= 0x0001
-                elif p == "shift":
-                    modifier |= 0x0004
-                elif p == "win":
-                    modifier |= 0x0008
-                else:
-                    key = self._parse_key(p)
-            if key:
-                self._hotkey_manager.register_hotkey(hotkey_id, modifier, key)
+        for hotkey_id, (modifier, key) in DEFAULT_HOTKEYS.items():
+            self._hotkey_manager.register_hotkey(hotkey_id, modifier, key)
 
     def _parse_key(self, key_str: str) -> int:
         key_map = {
@@ -816,20 +772,27 @@ class MainWindow(QWidget):
             self._float_timer.hide()
 
     def _on_hotkey(self, hotkey_id: int):
-        if hotkey_id == HOTKEY_START_PAUSE:
-            self._on_pause_resume()
-        elif hotkey_id == HOTKEY_RESET:
-            self._on_reset_phase()
-        elif hotkey_id == HOTKEY_NEXT_PHASE:
-            self._on_next_phase()
-        elif hotkey_id == HOTKEY_PREV_PHASE:
-            self._on_prev_phase()
-        elif hotkey_id == HOTKEY_TOGGLE_FLOAT:
+        if hotkey_id == HOTKEY_TOGGLE_FLOAT:
             if self._float_timer:
                 if self._float_timer.isVisible():
                     self._float_timer.hide()
                     self._navbar.set_float_checked(False)
                 else:
+                    self._float_timer.show()
+        elif hotkey_id == HOTKEY_FLOAT_SMALL:
+            if self._float_timer:
+                self._float_timer.set_size("small")
+                if not self._float_timer.isVisible():
+                    self._float_timer.show()
+        elif hotkey_id == HOTKEY_FLOAT_MEDIUM:
+            if self._float_timer:
+                self._float_timer.set_size("medium")
+                if not self._float_timer.isVisible():
+                    self._float_timer.show()
+        elif hotkey_id == HOTKEY_FLOAT_LARGE:
+            if self._float_timer:
+                self._float_timer.set_size("large")
+                if not self._float_timer.isVisible():
                     self._float_timer.show()
                     self._navbar.set_float_checked(True)
 

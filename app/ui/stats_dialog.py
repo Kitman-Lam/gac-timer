@@ -37,15 +37,66 @@ class StatsDialog(QDialog):
     def __init__(self, meeting_data: dict, parent=None):
         super().__init__(parent)
         self._meeting_data = meeting_data
+        style_sheet = """
+QDialog {
+    background-color: #FFFFFF;
+    color: rgba(0,0,0,0.95);
+    font-family: 'Inter, Microsoft YaHei, Segoe UI';
+}
+
+QPushButton {
+    background-color: rgba(0,0,0,0.05);
+    color: rgba(0,0,0,0.95);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 80px;
+    height: 36px;
+    max-height: 36px;
+}
+
+QPushButton:hover {
+    background-color: rgba(0,0,0,0.08);
+}
+
+QPushButton:pressed {
+    background-color: rgba(0,0,0,0.12);
+}
+
+QPushButton#primaryBtn {
+    background-color: #0075DE;
+    color: #FFFFFF;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 80px;
+    height: 36px;
+    max-height: 36px;
+}
+
+QPushButton#secondaryBtn {
+    background-color: rgba(0,0,0,0.05);
+    color: rgba(0,0,0,0.95);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 80px;
+    height: 36px;
+    max-height: 36px;
+}
+"""
+        self.setStyleSheet(style_sheet)
         self._setup_ui()
 
     def _setup_ui(self):
         self.setWindowTitle("会议统计")
         self.setFixedSize(700, 500)
-        self.setStyleSheet(
-            f"background-color: {BG_BASE}; color: {TEXT_PRIMARY}; "
-            f"font-family: '{FONT_FAMILY}';"
-        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -95,8 +146,8 @@ class StatsDialog(QDialog):
         btn_layout.setSpacing(10)
         btn_layout.addStretch()
 
-        excel_btn = QPushButton("导出 Excel")
-        excel_btn.setObjectName("secondaryBtn")
+        excel_btn = QPushButton("导出")
+        excel_btn.setObjectName("primaryBtn")
         excel_btn.clicked.connect(self._on_export_excel)
         btn_layout.addWidget(excel_btn)
 
@@ -219,15 +270,6 @@ class StatsDialog(QDialog):
             self._show_export_success(file_path)
 
     def _show_export_success(self, file_path: str):
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("导出成功")
-        msg_box.setText("成功导出")
-        msg_box.setIcon(QMessageBox.Information)
-
-        open_btn = msg_box.addButton("打开文件路径", QMessageBox.AcceptRole)
-        confirm_btn = msg_box.addButton("确认", QMessageBox.RejectRole)
-
-        msg_box.exec()
-
-        if msg_box.clickedButton() == open_btn:
-            subprocess.Popen(["explorer", "/select,", os.path.abspath(file_path)])
+        from app.ui.export_dialog import ExportSuccessDialog
+        dialog = ExportSuccessDialog(file_path, 1, self)
+        dialog.exec()

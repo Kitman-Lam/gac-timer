@@ -11,24 +11,23 @@ MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
 MOD_WIN = 0x0008
 
-VK_F5 = 0x74
-VK_F6 = 0x75
-VK_F7 = 0x76
-VK_F8 = 0x77
+VK_F9 = 0x78
+VK_F10 = 0x79
+VK_F11 = 0x7A
+VK_F12 = 0x7B
 
 WM_HOTKEY = 0x0312
 
-HOTKEY_START_PAUSE = 1
-HOTKEY_RESET = 2
-HOTKEY_NEXT_PHASE = 3
-HOTKEY_PREV_PHASE = 4
-HOTKEY_TOGGLE_FLOAT = 5
+HOTKEY_TOGGLE_FLOAT = 1
+HOTKEY_FLOAT_SMALL = 2
+HOTKEY_FLOAT_MEDIUM = 3
+HOTKEY_FLOAT_LARGE = 4
 
 DEFAULT_HOTKEYS = {
-    HOTKEY_START_PAUSE: (0, VK_F5),
-    HOTKEY_RESET: (0, VK_F6),
-    HOTKEY_NEXT_PHASE: (0, VK_F7),
-    HOTKEY_PREV_PHASE: (0, VK_F8),
+    HOTKEY_FLOAT_SMALL: (MOD_CONTROL, VK_F9),
+    HOTKEY_FLOAT_MEDIUM: (MOD_CONTROL, VK_F10),
+    HOTKEY_FLOAT_LARGE: (MOD_CONTROL, VK_F11),
+    HOTKEY_TOGGLE_FLOAT: (MOD_CONTROL, VK_F12),
 }
 
 
@@ -56,9 +55,18 @@ class HotkeyManager(QObject):
         super().__init__(parent)
         self._registered: dict = {}
         self._filter = _NativeEventFilter(self._on_hotkey)
+        self._install_filter()
+
+    def _install_filter(self):
         app = QApplication.instance()
         if app:
             app.installNativeEventFilter(self._filter)
+        else:
+            import sys
+            for obj in sys.modules.values():
+                if hasattr(obj, '__class__') and obj.__class__.__name__ == 'QApplication':
+                    obj.installNativeEventFilter(self._filter)
+                    break
 
     def _on_hotkey(self, hotkey_id: int):
         self.hotkey_pressed.emit(hotkey_id)

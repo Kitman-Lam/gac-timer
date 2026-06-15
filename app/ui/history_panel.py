@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import subprocess
 
 from PySide6.QtCore import Signal, Qt, QRect
 from PySide6.QtWidgets import (
@@ -122,7 +123,7 @@ class HistoryPanel(QWidget):
         self._meeting_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self._meeting_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self._meeting_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._meeting_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._meeting_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._meeting_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._meeting_table.verticalHeader().setVisible(False)
         self._meeting_table.verticalHeader().setDefaultSectionSize(50)
@@ -142,24 +143,19 @@ class HistoryPanel(QWidget):
         )
         self._meeting_table.currentCellChanged.connect(self._on_selection_changed)
         self._meeting_table.cellDoubleClicked.connect(self._on_item_double_clicked)
+        self._meeting_table.selectionModel().selectionChanged.connect(self._on_table_selection_changed)
         main_layout.addWidget(self._meeting_table, 1)
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        self._stats_btn = QPushButton("\u67e5\u770b\u7edf\u8ba1")
-        self._stats_btn.setObjectName("primaryBtn")
-        self._stats_btn.setEnabled(False)
-        self._stats_btn.clicked.connect(self._on_view_stats)
-        btn_layout.addWidget(self._stats_btn)
-
         self._batch_export_btn = QPushButton("\u5bfc\u51fa")
-        self._batch_export_btn.setObjectName("secondaryBtn")
+        self._batch_export_btn.setObjectName("primaryBtn")
         self._batch_export_btn.clicked.connect(self._on_batch_export)
         btn_layout.addWidget(self._batch_export_btn)
 
-        self._batch_delete_btn = QPushButton("\u6279\u91cf\u5220\u9664")
-        self._batch_delete_btn.setObjectName("dangerBtn")
+        self._batch_delete_btn = QPushButton("\u5220\u9664\u9009\u4e2d")
+        self._batch_delete_btn.setObjectName("secondaryBtn")
         self._batch_delete_btn.clicked.connect(self._on_batch_delete)
         btn_layout.addWidget(self._batch_delete_btn)
 
@@ -302,6 +298,18 @@ class HistoryPanel(QWidget):
             if chk_item:
                 chk_item.setCheckState(check_state)
 
+    def _on_table_selection_changed(self, selected, deselected):
+        for index in selected.indexes():
+            row = index.row()
+            chk_item = self._meeting_table.item(row, 0)
+            if chk_item:
+                chk_item.setCheckState(Qt.Checked)
+        for index in deselected.indexes():
+            row = index.row()
+            chk_item = self._meeting_table.item(row, 0)
+            if chk_item:
+                chk_item.setCheckState(Qt.Unchecked)
+
     def _has_checked_rows(self):
         for row in range(self._meeting_table.rowCount()):
             chk_item = self._meeting_table.item(row, 0)
@@ -312,10 +320,8 @@ class HistoryPanel(QWidget):
     def _on_selection_changed(self, row: int, col: int, prev_row: int, prev_col: int):
         if self._has_checked_rows():
             self._detail_frame.hide()
-            self._stats_btn.setEnabled(False)
         else:
             has_selection = row >= 0
-            self._stats_btn.setEnabled(has_selection)
 
             if has_selection:
                 name_item = self._meeting_table.item(row, 1)
@@ -334,11 +340,6 @@ class HistoryPanel(QWidget):
         meeting_id = name_item.data(Qt.UserRole)
         if meeting_id is not None:
             meeting_data = self.build_meeting_data(meeting_id)
-            self.view_stats_requested.emit(meeting_data)
-
-    def _on_view_stats(self):
-        meeting_data = self.get_selected_meeting()
-        if meeting_data:
             self.view_stats_requested.emit(meeting_data)
 
     def _on_batch_export(self):
@@ -390,6 +391,16 @@ class HistoryPanel(QWidget):
             file_path = os.path.join(dir_path, default_name)
             file_path = os.path.normpath(file_path)
 
+            if os.path.exists(file_path):
+                reply = QMessageBox.question(
+                    self, "文件已存在",
+                    f"文件 {default_name} 已存在，是否覆盖？",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply != QMessageBox.Yes:
+                    continue
+
             try:
                 export_to_excel(meeting_data, file_path)
             except Exception as e:
@@ -402,10 +413,10 @@ class HistoryPanel(QWidget):
                 self, "\u90e8\u5206\u5bfc\u51fa\u5931\u8d25",
                 f"\u4ee5\u4e0b\u4f1a\u8bae\u5bfc\u51fa\u5931\u8d25:\n\n{error_msg}"
             )
-        elif len(meetings_data) == 1:
-            QMessageBox.information(self, "\u5bfc\u51fa\u6210\u529f", "\u4f1a\u8bae\u8bb0\u5f55\u5df2\u5bfc\u51fa")
         else:
-            QMessageBox.information(self, "\u5bfc\u51fa\u6210\u529f", f"{len(meetings_data)} \u4e2a\u4f1a\u8bae\u8bb0\u5f55\u5df2\u5bfc\u51fa\u5230\u6307\u5b9a\u76ee\u5f55")
+            # 取最后一个成功导出的文件路径用于打开
+            last_file_path = file_path
+            self._show_export_success(last_file_path, len(meetings_data))
 
     def _on_batch_delete(self):
         checked_ids = self._get_checked_meeting_ids()
@@ -438,6 +449,11 @@ class HistoryPanel(QWidget):
                     if meeting_id is not None:
                         checked_ids.append(meeting_id)
         return checked_ids
+
+    def _show_export_success(self, file_path: str, count: int):
+        from app.ui.export_dialog import ExportSuccessDialog
+        dialog = ExportSuccessDialog(file_path, count, self)
+        dialog.exec()
 
 
 

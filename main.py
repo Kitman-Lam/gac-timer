@@ -3,8 +3,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import Qt, QSharedMemory
 from PySide6.QtGui import QIcon, QPainter, QPixmap, QColor, QPen
 from app.ui.main_window import MainWindow
 from app.ui.theme import APP_STYLESHEET, PRIMARY, FONT_FAMILY
@@ -51,12 +51,54 @@ def _create_clock_icon() -> QIcon:
     return QIcon(pixmap)
 
 
+def _check_single_instance():
+    import tempfile
+    import os
+    
+    lock_dir = os.path.join(tempfile.gettempdir(), "HuiBangShou")
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_file = os.path.join(lock_dir, "instance.lock")
+    
+    try:
+        if os.path.exists(lock_file):
+            try:
+                with open(lock_file, 'r') as f:
+                    pid = int(f.read().strip())
+                    try:
+                        os.kill(pid, 0)
+                        return False
+                    except (OSError, ValueError):
+                        pass
+            except Exception:
+                pass
+        
+        with open(lock_file, 'w') as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception:
+        return True
+
+
 def main():
+    if not _check_single_instance():
+        app = QApplication(sys.argv)
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle("提示")
+        msg_box.setText("会帮手 已经在运行中！")
+        msg_box.exec()
+        return
+    
     app = QApplication(sys.argv)
-    app.setApplicationName("GAC Timer")
+    app.setApplicationName("会帮手")
     app.setOrganizationName("GAC")
     app.setStyleSheet(APP_STYLESHEET)
-    app.setWindowIcon(_create_clock_icon())
+
+    if hasattr(sys, '_MEIPASS'):
+        icon_path = os.path.join(sys._MEIPASS, 'icon.png')
+    else:
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.png')
+    app.setWindowIcon(QIcon(icon_path))
 
     font = app.font()
     font.setFamily("Microsoft YaHei")

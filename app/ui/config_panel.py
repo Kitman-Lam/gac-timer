@@ -363,6 +363,7 @@ class ConfigPanel(QWidget):
         self._topic_list.model().rowsMoved.connect(self._on_topics_reordered)
         self._topic_list.cellDoubleClicked.connect(self._on_topic_double_clicked)
         self._topic_list.cellChanged.connect(self._on_topic_cell_changed)
+        self._topic_list.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self._topic_list.setVisible(False)
         main_layout.addWidget(self._topic_list, 1)
 
@@ -385,7 +386,7 @@ class ConfigPanel(QWidget):
         row1_layout.addWidget(self._manage_template_btn)
 
         self._delete_btn = QPushButton("删除选中")
-        self._delete_btn.setObjectName("dangerBtn")
+        self._delete_btn.setObjectName("secondaryBtn")
         self._delete_btn.clicked.connect(self._on_delete_topic)
         row1_layout.addWidget(self._delete_btn)
 
@@ -398,6 +399,7 @@ class ConfigPanel(QWidget):
 
         self._start_btn = QPushButton("开始会议")
         self._start_btn.setObjectName("primaryBtn")
+        self._start_btn.setFixedHeight(36)
         self._start_btn.clicked.connect(self._on_start_meeting)
         main_layout.addWidget(self._start_btn)
 
@@ -485,6 +487,18 @@ class ConfigPanel(QWidget):
         new_state = Qt.Checked if checked else Qt.Unchecked
         for i in range(self._topic_list.rowCount()):
             self._topic_list.item(i, 0).setCheckState(new_state)
+
+    def _on_selection_changed(self, selected, deselected):
+        for index in selected.indexes():
+            row = index.row()
+            chk_item = self._topic_list.item(row, 0)
+            if chk_item:
+                chk_item.setCheckState(Qt.Checked)
+        for index in deselected.indexes():
+            row = index.row()
+            chk_item = self._topic_list.item(row, 0)
+            if chk_item:
+                chk_item.setCheckState(Qt.Unchecked)
 
     def _on_add_topic(self):
         self._topic_counter += 1

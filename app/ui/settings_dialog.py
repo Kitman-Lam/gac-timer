@@ -35,20 +35,15 @@ from app.utils.audio_player import (
     AudioPlayer,
 )
 
-SETTING_KEY_HOTKEYS = "hotkeys"
 SETTING_KEY_SOUNDS = "sounds"
 SETTING_KEY_DISPLAY = "display"
 SETTING_KEY_DEFAULTS = "defaults"
 
-DEFAULT_HOTKEYS = {
-    "toggle_float": "",
-}
-
 DEFAULT_SOUNDS = {
-    "warning_selection": "soft_chime",
+    "warning": "custom_TPBTLOW",
     "remaining_minutes": 5,
-    "timeup_selection": "clear_bell",
-    "overtime_selection": "alert_beep",
+    "timeup": "custom_over",
+    "overtime": "custom_001",
     "overtime_minutes": 5,
 }
 
@@ -61,10 +56,6 @@ DEFAULT_TIMES = {
     "presentation_minutes": 10,
     "qa_minutes": 5,
 }
-
-HOTKEY_ACTIONS = [
-    ("toggle_float", "显示/隐藏悬浮窗口"),
-]
 
 SECTION_LABEL_STYLE = (
     f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
@@ -90,102 +81,12 @@ INPUT_STYLE = (
 )
 
 
-class _HotkeyButton(QPushButton):
-    def __init__(self, text: str, parent=None):
-        super().__init__(text, parent)
-        self._listening = False
-        self.setObjectName("secondaryBtn")
-        self.setMinimumWidth(80)
-        self.clicked.connect(self._start_listening)
-        self.setFocusPolicy(Qt.StrongFocus)
-
-    def _start_listening(self):
-        self._listening = True
-        self.setText("按下新的按键组合")
-        self.setStyleSheet(
-            f"QPushButton {{ background-color: {PRIMARY}; color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {PRIMARY}; border-radius: 8px; "
-            f"padding: 8px 20px; min-width: 80px; "
-            f"font-family: '{FONT_FAMILY}'; font-size: {FONT_SIZE_MEDIUM}px; }}"
-        )
-        self.setFocus()
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if not self._listening:
-            super().keyPressEvent(event)
-            return
-
-        key = event.key()
-        modifiers = event.modifiers()
-
-        if key in (Qt.Key_Backspace, Qt.Key_Escape):
-            self._cancel_listening()
-            return
-
-        if key in (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta):
-            return
-
-        parts = []
-        if modifiers & Qt.ControlModifier:
-            parts.append("Ctrl")
-        if modifiers & Qt.AltModifier:
-            parts.append("Alt")
-        if modifiers & Qt.ShiftModifier:
-            parts.append("Shift")
-
-        key_name = _key_to_string(key)
-        if key_name:
-            parts.append(key_name)
-
-        if parts:
-            combo = "+".join(parts)
-            self.setText(combo)
-            self._listening = False
-            self.setStyleSheet("")
-
-    def focusOutEvent(self, event):
-        if self._listening:
-            self._cancel_listening()
-        super().focusOutEvent(event)
-
-    def _cancel_listening(self):
-        self._listening = False
-        self.setStyleSheet("")
-
-    @property
-    def is_listening(self) -> bool:
-        return self._listening
-
-
-def _key_to_string(key: int) -> str:
-    special = {
-        Qt.Key_F1: "F1", Qt.Key_F2: "F2", Qt.Key_F3: "F3", Qt.Key_F4: "F4",
-        Qt.Key_F5: "F5", Qt.Key_F6: "F6", Qt.Key_F7: "F7", Qt.Key_F8: "F8",
-        Qt.Key_F9: "F9", Qt.Key_F10: "F10", Qt.Key_F11: "F11", Qt.Key_F12: "F12",
-        Qt.Key_Space: "Space", Qt.Key_Return: "Enter", Qt.Key_Enter: "Enter",
-        Qt.Key_Tab: "Tab", Qt.Key_Backspace: "Backspace",
-        Qt.Key_Insert: "Insert", Qt.Key_Delete: "Delete",
-        Qt.Key_Home: "Home", Qt.Key_End: "End",
-        Qt.Key_PageUp: "PageUp", Qt.Key_PageDown: "PageDown",
-        Qt.Key_Up: "Up", Qt.Key_Down: "Down",
-        Qt.Key_Left: "Left", Qt.Key_Right: "Right",
-    }
-    if key in special:
-        return special[key]
-    if 0x30 <= key <= 0x39:
-        return chr(key)
-    if 0x41 <= key <= 0x5A:
-        return chr(key)
-    return ""
-
-
 class SettingsDialog(QDialog):
     settings_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._db = DatabaseManager()
-        self._hotkey_buttons: dict[str, _HotkeyButton] = {}
         self._sound_combos: dict[str, QComboBox] = {}
         self._sound_spins: dict[str, QSpinBox] = {}
         self._audio = AudioPlayer()
@@ -203,10 +104,61 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("设置")
         self.setMinimumSize(500, 520)
         self.resize(500, 520)
-        self.setStyleSheet(
-            f"background-color: {BG_BASE}; color: {TEXT_PRIMARY}; "
-            f"font-family: '{FONT_FAMILY}';"
-        )
+        style_sheet = """
+QDialog {
+    background-color: #FFFFFF;
+    color: rgba(0,0,0,0.95);
+    font-family: 'Inter, Microsoft YaHei, Segoe UI';
+}
+
+QPushButton {
+    background-color: rgba(0,0,0,0.05);
+    color: rgba(0,0,0,0.95);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 80px;
+    height: 36px;
+    max-height: 36px;
+}
+
+QPushButton:hover {
+    background-color: rgba(0,0,0,0.08);
+}
+
+QPushButton:pressed {
+    background-color: rgba(0,0,0,0.12);
+}
+
+QPushButton#primaryBtn {
+    background-color: #0075DE;
+    color: #FFFFFF;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 100px;
+    height: 36px;
+    max-height: 36px;
+}
+
+QPushButton#secondaryBtn {
+    background-color: rgba(0,0,0,0.05);
+    color: rgba(0,0,0,0.95);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 100px;
+    height: 36px;
+    max-height: 36px;
+}
+"""
+        self.setStyleSheet(style_sheet)
 
         self._main_layout = QVBoxLayout(self)
         self._main_layout.setContentsMargins(16, 16, 16, 16)
@@ -228,7 +180,6 @@ class SettingsDialog(QDialog):
         basic_layout = QVBoxLayout(basic_tab)
         basic_layout.setContentsMargins(8, 8, 8, 8)
         basic_layout.setSpacing(12)
-        self._setup_hotkey_section(basic_layout)
         self._setup_defaults_section(basic_layout)
         basic_layout.addStretch()
         tabs.addTab(basic_tab, "基础配置")
@@ -273,77 +224,50 @@ class SettingsDialog(QDialog):
 
         save_btn = QPushButton("保存")
         save_btn.setObjectName("primaryBtn")
-        save_btn.setFixedWidth(100)
         save_btn.clicked.connect(self._on_save)
         btn_layout.addWidget(save_btn)
 
         cancel_btn = QPushButton("取消")
         cancel_btn.setObjectName("secondaryBtn")
-        cancel_btn.setFixedWidth(100)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
         self._main_layout.addLayout(btn_layout)
 
-    def _setup_hotkey_section(self, layout):
-        hotkey_section = QLabel("快捷键设置")
-        hotkey_section.setStyleSheet(SECTION_LABEL_STYLE)
-        layout.addWidget(hotkey_section)
-
-        hotkey_hint = QLabel("点击快捷键按钮后，按下新的按键组合即可重新绑定")
-        hotkey_hint.setStyleSheet(SUB_LABEL_STYLE)
-        hotkey_hint.setWordWrap(True)
-        layout.addWidget(hotkey_hint)
-
-        for action_key, action_label in HOTKEY_ACTIONS:
-            row = QHBoxLayout()
-            row.setSpacing(12)
-
-            label = QLabel(action_label)
-            label.setStyleSheet(ROW_LABEL_STYLE)
-            label.setFixedWidth(140)
-            row.addWidget(label)
-
-            btn = _HotkeyButton(DEFAULT_HOTKEYS.get(action_key, "按下配置快捷键"))
-            btn.setFixedWidth(150)
-            self._hotkey_buttons[action_key] = btn
-            row.addWidget(btn)
-
-            row.addStretch()
-            layout.addLayout(row)
-
-        layout.addSpacing(16)
-
     def _setup_defaults_section(self, layout):
-        defaults_label = QLabel("新建议题默认时间")
+        defaults_label = QLabel("议题默认时间")
         defaults_label.setStyleSheet(SECTION_LABEL_STYLE)
         layout.addWidget(defaults_label)
 
-        defaults_row = QHBoxLayout()
-        defaults_row.setSpacing(12)
-
+        pres_row = QHBoxLayout()
+        pres_row.setSpacing(12)
         pres_label = QLabel("汇报时间")
         pres_label.setStyleSheet(ROW_LABEL_STYLE)
-        defaults_row.addWidget(pres_label)
+        pres_label.setFixedWidth(80)
+        pres_row.addWidget(pres_label)
         self._default_presentation_spin = QSpinBox()
         self._default_presentation_spin.setRange(1, 999)
         self._default_presentation_spin.setValue(DEFAULT_TIMES["presentation_minutes"])
         self._default_presentation_spin.setSuffix(" 分钟")
         self._default_presentation_spin.setStyleSheet(INPUT_STYLE)
-        defaults_row.addWidget(self._default_presentation_spin)
+        pres_row.addWidget(self._default_presentation_spin)
+        pres_row.addStretch()
+        layout.addLayout(pres_row)
 
+        disc_row = QHBoxLayout()
+        disc_row.setSpacing(12)
         disc_label = QLabel("讨论时间")
         disc_label.setStyleSheet(ROW_LABEL_STYLE)
-        defaults_row.addWidget(disc_label)
+        disc_label.setFixedWidth(80)
+        disc_row.addWidget(disc_label)
         self._default_qa_spin = QSpinBox()
         self._default_qa_spin.setRange(1, 999)
         self._default_qa_spin.setValue(DEFAULT_TIMES["qa_minutes"])
         self._default_qa_spin.setSuffix(" 分钟")
         self._default_qa_spin.setStyleSheet(INPUT_STYLE)
-        defaults_row.addWidget(self._default_qa_spin)
-
-        defaults_row.addStretch()
-        layout.addLayout(defaults_row)
+        disc_row.addWidget(self._default_qa_spin)
+        disc_row.addStretch()
+        layout.addLayout(disc_row)
 
     def _setup_display_section(self, layout):
         display_label = QLabel("显示设置")
@@ -562,18 +486,7 @@ class SettingsDialog(QDialog):
             self._audio.preview(preset_keys[idx])
 
     def load_settings(self):
-        # 1. Load Hotkeys
-        hotkeys_raw = self._db.get_setting(SETTING_KEY_HOTKEYS)
-        if hotkeys_raw:
-            try:
-                hotkeys = json.loads(hotkeys_raw)
-                for action_key, btn in self._hotkey_buttons.items():
-                    saved_value = hotkeys.get(action_key, DEFAULT_HOTKEYS.get(action_key, "按下配置快捷键"))
-                    btn.setText(saved_value if saved_value else "按下配置快捷键")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # 2. Load Default Times
+        # 1. Load Default Times
         defaults_raw = self._db.get_setting(SETTING_KEY_DEFAULTS)
         if defaults_raw:
             try:
@@ -617,14 +530,7 @@ class SettingsDialog(QDialog):
                 pass
 
     def _on_save(self):
-        # 1. Save Hotkeys
-        hotkeys = {}
-        for action_key, btn in self._hotkey_buttons.items():
-            value = btn.text()
-            hotkeys[action_key] = value if value != "按下配置快捷键" else ""
-        self._db.set_setting(SETTING_KEY_HOTKEYS, json.dumps(hotkeys))
-
-        # 2. Save Default Times
+        # 1. Save Default Times
         defaults = {
             "presentation_minutes": self._default_presentation_spin.value(),
             "qa_minutes": self._default_qa_spin.value(),

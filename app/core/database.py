@@ -28,7 +28,7 @@ class DatabaseManager:
         self._initialized = True
 
         if db_path is None:
-            appdata = Path.home() / "AppData" / "Roaming" / "GAC Timer"
+            appdata = Path.home() / "AppData" / "Roaming" / "会帮手"
         else:
             appdata = Path(db_path).parent
 

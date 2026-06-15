@@ -1,4 +1,4 @@
-# 规格说明（Spec）：GAC Timer — Windows会议议题分段计时器
+# 规格说明（Spec）：会帮手 — Windows会议议题分段计时器
 
 ## 1. 背景与目标
 

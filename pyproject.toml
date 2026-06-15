@@ -1,7 +1,7 @@
 [project]
-name = "gac-timer"
-version = "0.3.0"
-description = "GAC Timer - Windows Meeting Topic Timer"
+name = "hui-bang-shou"
+version = "1.0.0"
+description = "会帮手 - Windows Meeting Topic Timer"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
