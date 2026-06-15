@@ -298,6 +298,9 @@ class ConfigPanel(QWidget):
         )
         main_layout.addWidget(meeting_name_label)
 
+        meeting_name_row = QHBoxLayout()
+        meeting_name_row.setSpacing(12)
+        
         self._meeting_name_edit = QLineEdit()
         self._meeting_name_edit.setPlaceholderText("输入会议名称")
         self._meeting_name_edit.setStyleSheet(
@@ -306,7 +309,20 @@ class ConfigPanel(QWidget):
             f"padding: 12px 16px; font-size: 16px; font-family: '{FONT_FAMILY}'; }}"
             f"QLineEdit:focus {{ border: 2px solid {PRIMARY}; }}"
         )
-        main_layout.addWidget(self._meeting_name_edit)
+        meeting_name_row.addWidget(self._meeting_name_edit)
+
+        self._import_link = QPushButton('导入会议计划')
+        self._import_link.setStyleSheet(
+            f"QPushButton {{ color: {PRIMARY}; font-size: 14px; "
+            f"font-family: '{FONT_FAMILY}'; "
+            f"background: transparent; border: none; padding: 0; }}"
+            f"QPushButton:hover {{ color: {PRIMARY}; }}"
+        )
+        self._import_link.setCursor(Qt.PointingHandCursor)
+        self._import_link.clicked.connect(self._on_import_link_clicked)
+        meeting_name_row.addWidget(self._import_link)
+        
+        main_layout.addLayout(meeting_name_row)
 
         self._empty_label = QLabel("\n暂无议题，请在下方添加")
         self._empty_label.setAlignment(Qt.AlignCenter)
@@ -708,6 +724,38 @@ class ConfigPanel(QWidget):
                 "qa_minutes": t["qa_minutes"],
             }
             for t in template_topics
+        ]
+        self._topic_counter = len(self._topics)
+        self._refresh_topic_list()
+
+    def _on_import_link_clicked(self, event):
+        from app.ui.import_dialog import _ImportDialog
+        
+        dialog = _ImportDialog(self)
+        dialog.import_ready.connect(self._on_import_data)
+        dialog.exec()
+
+    def _on_import_data(self, data: dict):
+        has_existing_data = self._meeting_name_edit.text().strip() or self._topics
+        
+        if has_existing_data:
+            reply = QMessageBox.question(
+                self, "确认导入",
+                "当前已有会议名称或议题，导入将覆盖现有内容，确定继续？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        self._meeting_name_edit.setText(data["name"])
+        self._topics = [
+            {
+                "name": t["name"],
+                "presentation_minutes": t["presentation_minutes"],
+                "qa_minutes": t["qa_minutes"],
+            }
+            for t in data["topics"]
         ]
         self._topic_counter = len(self._topics)
         self._refresh_topic_list()

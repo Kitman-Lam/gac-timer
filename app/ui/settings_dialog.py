@@ -93,10 +93,9 @@ class SettingsDialog(QDialog):
         self._sound_content_widget = None
         self._sound_layout = None
         self._main_layout = None
-        self._is_loading = False  # 标记是否正在加载设置
+        self._is_loading = True  # 标记是否正在加载设置，提前设置为True防止初始化时播放声音
         self._audio.reload_custom_sounds()
         self._setup_ui()
-        self._is_loading = True
         self.load_settings()
         self._is_loading = False
 
@@ -386,6 +385,10 @@ QPushButton#secondaryBtn {
             combo.currentIndexChanged.connect(
                 lambda idx, st=sound_type, cb=combo: self._on_sound_changed(st, cb)
             )
+            # 设置默认值
+            default_key = DEFAULT_SOUNDS.get(sound_type)
+            if default_key and default_key in current_preset_keys:
+                combo.setCurrentIndex(current_preset_keys.index(default_key))
             self._sound_combos[sound_type] = combo
             combo_row.addWidget(combo)
 
