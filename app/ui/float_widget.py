@@ -112,10 +112,10 @@ class FloatTimer(QWidget):
                 # 闪烁效果：快速闪烁，约 0.3 秒一次，持续 1 秒
                 cycle = 10
                 phase = self._pulse_frame % cycle
-                if phase < 10:
+                if phase < 5:
                     alpha = 255
                 else:
-                    alpha = 100
+                    alpha = 40
 
                 gradient = QRadialGradient(cx, cy, radius)
                 gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER))
@@ -362,10 +362,13 @@ class FloatTimer(QWidget):
         self._warning_minutes = remaining_minutes
         self._overtime_minutes = overtime_minutes
 
-    def suppress_pulse(self):
+    def suppress_pulse(self, overtime_seconds: float = None):
         self._pulse_active = False
         self._pulse_frame = 0
-        overtime_seconds = max(0, int(self._overtime))
+        if overtime_seconds is None:
+            overtime_seconds = max(0, int(self._overtime))
+        else:
+            overtime_seconds = max(0, int(overtime_seconds))
         if self._overtime_minutes > 0:
             self._last_5min_block = overtime_seconds // (self._overtime_minutes * 60)
 

@@ -113,9 +113,16 @@ def main():
 
     window = MainWindow()
     window.show()
+    window.activateWindow()
+    window.raise_()
     window._register_hotkeys()
-    window._recover_in_progress_meeting()
-    window._create_float_timer()
+
+    def delayed_init():
+        window._create_float_timer()
+        window._recover_in_progress_meeting()
+
+    from PySide6.QtCore import QTimer
+    QTimer.singleShot(100, delayed_init)
 
     sys.exit(app.exec())
 

@@ -188,6 +188,7 @@ class MainWindow(QWidget):
         self._overtime_triggered = False
         self._remaining_minutes_triggered = False
         self._last_overtime_minute = 0
+        self._recovery_overtime = None
 
         self._setup_ui()
         self._connect_signals()
@@ -834,6 +835,19 @@ class MainWindow(QWidget):
         self._float_timer.set_opacity(display.get("opacity", 85))
         self._float_timer.set_size(display.get("float_size", "medium"))
 
+        raw_sounds = self._db.get_setting(SETTING_KEY_SOUNDS)
+        if raw_sounds:
+            try:
+                sounds = json.loads(raw_sounds)
+            except (json.JSONDecodeError, TypeError):
+                sounds = dict(DEFAULT_SOUNDS)
+        else:
+            sounds = dict(DEFAULT_SOUNDS)
+        self._float_timer.set_reminder_config(
+            sounds.get("remaining_minutes", 5),
+            sounds.get("overtime_minutes", 5),
+        )
+
     def _save_float_size(self, size: str):
         raw = self._db.get_setting(SETTING_KEY_DISPLAY)
         if raw:
@@ -866,7 +880,7 @@ class MainWindow(QWidget):
 
         meeting = meetings[0]
         # 使用非模态对话框，不阻塞主窗口事件循环
-        msg_box = QMessageBox()
+        msg_box = QMessageBox(self)
         msg_box.setWindowTitle("恢复会议")
         msg_box.setText(f"检测到未完成的会议：{meeting.name}，是否恢复？")
         ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
@@ -899,6 +913,9 @@ class MainWindow(QWidget):
                     tick = engine.tick()
                     overtime = tick.get("overtime_seconds", 0.0)
                     self._last_overtime_minute = int(overtime) // 60
+                    self._recovery_overtime = overtime
+                else:
+                    self._recovery_overtime = None
 
                 info = self._controller.get_current_info()
                 self._topic_name_label.setText(info.get("topic_name", ""))
@@ -915,7 +932,7 @@ class MainWindow(QWidget):
                     self._float_timer.show()
                     self._navbar.set_float_checked(True)
                     if engine.state in (TimerEngine.OVERTIME, TimerEngine.PAUSED_OT):
-                        self._float_timer.suppress_pulse()
+                        self._float_timer.suppress_pulse(self._recovery_overtime)
 
         msg_box.finished.connect(on_finished)
         msg_box.show()
