@@ -57,6 +57,7 @@ class FloatTimer(QWidget):
         self._scroll_offset = 0.0
         self._scroll_speed = 0.75
         self._show_topic_name = True
+        self._actual_seconds = 0.0
 
         self._warning_minutes = 5
         self._overtime_minutes = 5
@@ -241,6 +242,8 @@ class FloatTimer(QWidget):
             time_str = "会帮手"
         elif self._is_overtime:
             time_str = format_time(self._overtime)
+        elif self._phase == "qa":
+            time_str = format_time(self._actual_seconds)
         else:
             time_str = format_time(self._remaining)
 
@@ -321,6 +324,7 @@ class FloatTimer(QWidget):
         self._progress = progress
         self._remaining = remaining
         self._overtime = overtime
+        self._actual_seconds = tick_data.get("actual_seconds", 0.0)
         self._is_overtime = is_overtime
         self._is_paused = is_paused
         self._is_running = state != "idle"
