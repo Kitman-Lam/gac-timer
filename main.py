@@ -55,7 +55,7 @@ def _check_single_instance():
     import tempfile
     import os
     
-    lock_dir = os.path.join(tempfile.gettempdir(), "HuiBangShou")
+    lock_dir = os.path.join(tempfile.gettempdir(), "MeetTimer")
     os.makedirs(lock_dir, exist_ok=True)
     lock_file = os.path.join(lock_dir, "instance.lock")
     
@@ -91,6 +91,7 @@ def main():
     
     app = QApplication(sys.argv)
     app.setApplicationName("会帮手")
+    app.setApplicationDisplayName("MeetTimer")
     app.setOrganizationName("GAC")
     app.setStyleSheet(APP_STYLESHEET)
 

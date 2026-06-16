@@ -133,7 +133,7 @@ class _TemplateSelectDialog(QDialog):
         ok_btn = QPushButton("确定")
         ok_btn.setObjectName("primaryBtn")
         ok_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("取消")
+        cancel_btn = QPushButton("关闭")
         cancel_btn.setObjectName("secondaryBtn")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(ok_btn)
@@ -184,7 +184,7 @@ class _TemplateManageDialog(QDialog):
         rename_btn.setObjectName("secondaryBtn")
         rename_btn.clicked.connect(self._on_rename)
         delete_btn = QPushButton("删除选中")
-        delete_btn.setObjectName("dangerBtn")
+        delete_btn.setObjectName("secondaryBtn")
         delete_btn.clicked.connect(self._on_delete)
         close_btn = QPushButton("关闭")
         close_btn.setObjectName("secondaryBtn")
@@ -218,29 +218,57 @@ class _TemplateManageDialog(QDialog):
             QMessageBox.warning(self, "提示", "请先选择一个计划")
             return
         template_id = current.data(Qt.UserRole)
-        name, ok = QInputDialog.getText(
-            self, "修改名称", "新的会议名称：",
-            text=current.text()
-        )
-        if ok and name.strip() and name.strip() != current.text():
-            self._db.update_template(template_id, name.strip())
-            current.setText(name.strip())
-            for t in self._templates:
-                if t.id == template_id:
-                    t.name = name.strip()
-                    break
-            QMessageBox.information(self, "提示", "名称已修改")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("修改名称")
+        dialog.setMinimumWidth(300)
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel("新的会议名称：")
+        layout.addWidget(label)
+
+        line_edit = QLineEdit()
+        line_edit.setText(current.text())
+        layout.addWidget(line_edit)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        ok_btn = QPushButton("确定")
+        ok_btn.setObjectName("primaryBtn")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn = QPushButton("关闭")
+        cancel_btn.setObjectName("secondaryBtn")
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() == QDialog.Accepted:
+            name = line_edit.text().strip()
+            if name and name != current.text():
+                self._db.update_template(template_id, name)
+                current.setText(name)
+                for t in self._templates:
+                    if t.id == template_id:
+                        t.name = name
+                        break
+                QMessageBox.information(self, "提示", "名称已修改")
 
     def _on_delete(self):
         current = self._list.currentItem()
         if current is None:
             return
         template_id = current.data(Qt.UserRole)
-        reply = QMessageBox.question(
-            self, "删除计划", "确定删除该计划？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("删除计划")
+        msg_box.setText("确定删除该计划？")
+        ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+        ok_btn.setObjectName("primaryBtn")
+        close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+        close_btn.setObjectName("secondaryBtn")
+        msg_box.exec()
+        if msg_box.clickedButton() == ok_btn:
             self._db.delete_template(template_id)
             self._templates = [t for t in self._templates if t.id != template_id]
             self._refresh_list()
@@ -537,16 +565,26 @@ class ConfigPanel(QWidget):
                 rows_to_delete.append(i)
 
         if not rows_to_delete:
-            QMessageBox.warning(self, "提示", "请先勾选要删除的议题")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("提示")
+            msg_box.setText("请先勾选要删除的议题")
+            close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+            close_btn.setObjectName("secondaryBtn")
+            msg_box.exec()
             return
 
         count = len(rows_to_delete)
-        reply = QMessageBox.question(
-            self, "删除议题",
-            f"确定删除选中的 {count} 个议题？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("删除议题")
+        msg_box.setText(f"确定删除选中的 {count} 个议题？")
+        ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+        ok_btn.setObjectName("primaryBtn")
+        close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+        close_btn.setObjectName("secondaryBtn")
+        msg_box.exec()
+        if msg_box.clickedButton() == ok_btn:
             for row in sorted(rows_to_delete, reverse=True):
                 self._topics.pop(row)
             self._refresh_topic_list()
@@ -570,13 +608,31 @@ class ConfigPanel(QWidget):
 
     def _on_save_template(self):
         if not self._topics:
-            QMessageBox.warning(self, "提示", "当前没有议题可保存")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("提示")
+            msg_box.setText("当前没有议题可保存")
+            close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+            close_btn.setObjectName("secondaryBtn")
+            msg_box.exec()
             return
 
         from datetime import datetime
         name = self._meeting_name_edit.text().strip()
         if not name:
             name = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 检查重名（编辑模式下如果名称没变则跳过检查）
+        if self._editing_template_id is None or name != self._editing_template_name:
+            if self._db.template_name_exists(name):
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Warning)
+                msg_box.setWindowTitle("提示")
+                msg_box.setText("该会议名称已存在，请使用其他名称")
+                close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+                close_btn.setObjectName("secondaryBtn")
+                msg_box.exec()
+                return
 
         if self._editing_template_id is not None:
             self._db.delete_template_topics(self._editing_template_id)
@@ -592,7 +648,13 @@ class ConfigPanel(QWidget):
             self._editing_template_name = ""
             self._save_template_btn.setText("保存会议计划")
             self._save_template_btn.setStyleSheet("")
-            QMessageBox.information(self, "提示", "会议计划已更新")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Information)
+            msg_box.setWindowTitle("提示")
+            msg_box.setText("会议计划已更新")
+            ok_btn = msg_box.addButton("确认", QMessageBox.AcceptRole)
+            ok_btn.setObjectName("primaryBtn")
+            msg_box.exec()
             self._clear_meeting_form()
             return
 
@@ -609,9 +671,6 @@ class ConfigPanel(QWidget):
 
     def _on_load_template(self):
         templates = self._db.list_templates()
-        if not templates:
-            QMessageBox.information(self, "提示", "暂无会议计划")
-            return
         dialog = _TemplateSelectDialog(templates, self)
         if dialog.exec() == QDialog.Accepted:
             template_id = dialog.selected_template_id()
@@ -739,13 +798,16 @@ class ConfigPanel(QWidget):
         has_existing_data = self._meeting_name_edit.text().strip() or self._topics
         
         if has_existing_data:
-            reply = QMessageBox.question(
-                self, "确认导入",
-                "当前已有会议名称或议题，导入将覆盖现有内容，确定继续？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Question)
+            msg_box.setWindowTitle("确认导入")
+            msg_box.setText("当前已有会议名称或议题，导入将覆盖现有内容，确定继续？")
+            ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+            ok_btn.setObjectName("primaryBtn")
+            close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+            close_btn.setObjectName("secondaryBtn")
+            msg_box.exec()
+            if msg_box.clickedButton() != ok_btn:
                 return
 
         self._meeting_name_edit.setText(data["name"])

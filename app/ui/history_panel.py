@@ -392,13 +392,16 @@ class HistoryPanel(QWidget):
             file_path = os.path.normpath(file_path)
 
             if os.path.exists(file_path):
-                reply = QMessageBox.question(
-                    self, "文件已存在",
-                    f"文件 {default_name} 已存在，是否覆盖？",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
-                )
-                if reply != QMessageBox.Yes:
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Question)
+                msg_box.setWindowTitle("文件已存在")
+                msg_box.setText(f"文件 {default_name} 已存在，是否覆盖？")
+                ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+                ok_btn.setObjectName("primaryBtn")
+                close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+                close_btn.setObjectName("secondaryBtn")
+                msg_box.exec()
+                if msg_box.clickedButton() != ok_btn:
                     continue
 
             try:
@@ -425,14 +428,16 @@ class HistoryPanel(QWidget):
             return
 
         count = len(checked_ids)
-        reply = QMessageBox.question(
-            self,
-            "\u5220\u9664\u4f1a\u8bae",
-            f"\u786e\u5b9a\u5220\u9664\u9009\u4e2d\u7684 {count} \u4e2a\u4f1a\u8bae\u8bb0\u5f55\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u6062\u590d\u3002",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes:
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("删除会议")
+        msg_box.setText(f"确定删除选中的 {count} 个会议记录？此操作不可恢复。")
+        ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+        ok_btn.setObjectName("primaryBtn")
+        close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+        close_btn.setObjectName("secondaryBtn")
+        msg_box.exec()
+        if msg_box.clickedButton() == ok_btn:
             for meeting_id in checked_ids:
                 self._db.delete_meeting(meeting_id)
             self.refresh_list()

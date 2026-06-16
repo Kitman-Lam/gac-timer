@@ -16,13 +16,13 @@ if (-not (Test-Path $pyinstaller)) {
     & $venvPython -m pip install pyinstaller
 }
 
-Write-Host "Building HuiBangShou..." -ForegroundColor Green
+Write-Host "Building MeetTimer..." -ForegroundColor Green
 & $pyinstaller --clean --noconfirm "gac_timer.spec"
 
-$outputDir = Join-Path $projectDir "dist\HuiBangShou"
+$outputDir = Join-Path $projectDir "dist\MeetTimer"
 if (Test-Path $outputDir) {
     Write-Host "Build successful! Output at: $outputDir" -ForegroundColor Green
-    Write-Host "Run HuiBangShou.exe from the output directory." -ForegroundColor Cyan
+    Write-Host "Run MeetTimer.exe from the output directory." -ForegroundColor Cyan
 } else {
     Write-Host "Build failed!" -ForegroundColor Red
     exit 1

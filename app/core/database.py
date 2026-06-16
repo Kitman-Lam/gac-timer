@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -28,26 +29,72 @@ class DatabaseManager:
         self._initialized = True
 
         if db_path is None:
-            appdata = Path.home() / "AppData" / "Roaming" / "会帮手"
+            # 优先使用 LOCALAPPDATA（用户有完全读写权限）
+            localappdata_env = os.environ.get("LOCALAPPDATA")
+            print(f"[DB INIT] LOCALAPPDATA env: {localappdata_env}")
+            if localappdata_env:
+                appdata = Path(localappdata_env) / "会帮手"
+                print(f"[DB INIT] Using LOCALAPPDATA path: {appdata}")
+            else:
+                # 兜底使用 APPDATA
+                appdata_env = os.environ.get("APPDATA")
+                print(f"[DB INIT] LOCALAPPDATA not found, falling back to APPDATA: {appdata_env}")
+                if appdata_env:
+                    appdata = Path(appdata_env) / "会帮手"
+                else:
+                    appdata = Path.home() / "AppData" / "Local" / "会帮手"
+
+            try:
+                appdata.mkdir(parents=True, exist_ok=True)
+                print(f"[DB INIT] Created appdata dir: {appdata}")
+            except Exception as e:
+                print(f"[DB INIT] Failed to create appdata dir: {e}")
+                # 最后兜底：用户目录
+                appdata = Path.home() / "会帮手"
+                print(f"[DB INIT] Trying user home fallback: {appdata}")
+                try:
+                    appdata.mkdir(parents=True, exist_ok=True)
+                except Exception as e2:
+                    print(f"[DB INIT] Home fallback also failed: {e2}")
         else:
             appdata = Path(db_path).parent
-
-        appdata.mkdir(parents=True, exist_ok=True)
+            appdata.mkdir(parents=True, exist_ok=True)
 
         if db_path is None:
             self._db_path = str(appdata / "gac_timer.db")
         else:
             self._db_path = db_path
+        print(f"[DB INIT] Final db_path: {self._db_path}")
 
         self._local = None
         self._create_tables()
 
     @contextmanager
     def _get_connection(self):
-        conn = sqlite3.connect(self._db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.row_factory = sqlite3.Row
+        import sys
+        print(f"[DB] Attempting to connect to: {self._db_path}")
+        db_dir = os.path.dirname(self._db_path)
+        print(f"[DB] DB directory: {db_dir}")
+        print(f"[DB] Directory exists: {os.path.exists(db_dir)}")
+        print(f"[DB] Is directory: {os.path.isdir(db_dir)}")
+        if os.path.exists(db_dir):
+            print(f"[DB] Directory writable: {os.access(db_dir, os.W_OK)}")
+
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+            print(f"[DB] Directory ensured/created")
+        except Exception as e:
+            print(f"[DB] Cannot create directory: {e}")
+
+        try:
+            conn = sqlite3.connect(self._db_path, timeout=30)
+            print(f"[DB] Connection established")
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.row_factory = sqlite3.Row
+        except Exception as e:
+            print(f"[DB ERROR] Cannot connect: {e}")
+            raise
         try:
             yield conn
             conn.commit()
@@ -56,6 +103,7 @@ class DatabaseManager:
             raise
         finally:
             conn.close()
+            print(f"[DB] Connection closed")
 
     def _create_tables(self):
         with self._get_connection() as conn:
@@ -255,6 +303,13 @@ class DatabaseManager:
         with self._get_connection() as conn:
             rows = conn.execute("SELECT * FROM meeting_templates ORDER BY created_at DESC").fetchall()
             return [MeetingTemplate(**dict(r)) for r in rows]
+
+    def template_name_exists(self, name: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM meeting_templates WHERE name = ?", (name,)
+            )
+            return cursor.fetchone()[0] > 0
 
     def delete_template(self, template_id: int) -> None:
         with self._get_connection() as conn:

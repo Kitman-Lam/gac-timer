@@ -93,6 +93,7 @@ class _ImportDialog(QDialog):
                 import shutil
                 shutil.copy(template_path, save_path)
                 QMessageBox.information(self, "提示", "模板下载成功")
+                self.accept()
             except Exception as e:
                 QMessageBox.warning(self, "提示", f"下载失败：{str(e)}")
 

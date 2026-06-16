@@ -711,21 +711,24 @@ class MainWindow(QWidget):
     def _show_detached_message_box(self, title, message):
         """显示不依附主窗口的消息框，防止主窗口被带到前面"""
         from PySide6.QtWidgets import QMessageBox
-        
+
         msg_box = QMessageBox()
         msg_box.setWindowTitle(title)
         msg_box.setText(message)
-        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msg_box.setDefaultButton(QMessageBox.No)
+        ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+        ok_btn.setObjectName("primaryBtn")
+        close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+        close_btn.setObjectName("secondaryBtn")
+        msg_box.setDefaultButton(close_btn)
         # 设置窗口标志，防止它影响主窗口
         msg_box.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
-        return msg_box.exec()
+        msg_box.exec()
+        return msg_box.clickedButton() == ok_btn
 
     def _on_reset_phase(self):
-        reply = self._show_detached_message_box(
+        if self._show_detached_message_box(
             "重置阶段", "确定重置当前阶段计时？"
-        )
-        if reply == QMessageBox.Yes:
+        ):
             self._controller.reset_current_phase()
             self._warning_triggered = False
             self._overtime_triggered = False
@@ -740,10 +743,9 @@ class MainWindow(QWidget):
         self._pause_resume_btn.setText("暂停")
 
     def _on_end_meeting(self):
-        reply = self._show_detached_message_box(
+        if self._show_detached_message_box(
             "结束会议", "确定结束会议？未完成的阶段将标记为已完成。"
-        )
-        if reply == QMessageBox.Yes:
+        ):
             self._controller.complete_meeting()
 
     def _create_float_timer(self):
@@ -849,13 +851,16 @@ class MainWindow(QWidget):
         msg_box = QMessageBox()
         msg_box.setWindowTitle("恢复会议")
         msg_box.setText(f"检测到未完成的会议：{meeting.name}，是否恢复？")
-        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msg_box.setDefaultButton(QMessageBox.Yes)
+        ok_btn = msg_box.addButton("确定", QMessageBox.AcceptRole)
+        ok_btn.setObjectName("primaryBtn")
+        close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+        close_btn.setObjectName("secondaryBtn")
+        msg_box.setDefaultButton(ok_btn)
         msg_box.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         msg_box.setModal(False)
 
-        def on_finished(result):
-            if result == QMessageBox.Yes:
+        def on_finished():
+            if msg_box.clickedButton() == ok_btn:
                 self._current_meeting_id = meeting.id
                 self._meeting_name_label.setText(meeting.name)
                 self._warning_triggered = False
@@ -1129,23 +1134,29 @@ class MainWindow(QWidget):
 
         layout.addLayout(form)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        ok_btn = QPushButton("确定")
+        ok_btn.setObjectName("primaryBtn")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn = QPushButton("关闭")
+        cancel_btn.setObjectName("secondaryBtn")
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
 
         if dialog.exec() != QDialog.Accepted:
             return
 
         name = name_input.text().strip()
         if not name:
-            # 使用独立的消息框
-            msg_box = QMessageBox()
+            msg_box = QMessageBox(dialog)
+            msg_box.setIcon(QMessageBox.Warning)
             msg_box.setWindowTitle("提示")
             msg_box.setText("请输入议题名称")
-            msg_box.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+            close_btn = msg_box.addButton("关闭", QMessageBox.RejectRole)
+            close_btn.setObjectName("secondaryBtn")
             msg_box.exec()
             return
 

@@ -6,6 +6,7 @@ data/
 *.spec
 build/
 dist/
+output/
 .env
 .uv/
 .python-version

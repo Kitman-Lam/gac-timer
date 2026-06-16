@@ -68,6 +68,7 @@ class FloatTimer(QWidget):
         self.setAttribute(Qt.WA_InputMethodEnabled, False)
         self.setWindowOpacity(self._opacity_percent / 100.0)
         self._apply_size()
+        self._center_on_screen()
 
     def _opacity_alpha(self, alpha: int) -> int:
         if self._opacity_percent >= 100:
@@ -286,8 +287,16 @@ class FloatTimer(QWidget):
             y = int(db.get_setting("float_pos_y", "-1"))
             if x >= 0 and y >= 0:
                 self.move(x, y)
+            else:
+                self._center_on_screen()
         except (ValueError, TypeError):
-            pass
+            self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen_geometry = QApplication.primaryScreen().geometry()
+        x = (screen_geometry.width() - self.width()) // 2
+        y = 100
+        self.move(x, y)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
