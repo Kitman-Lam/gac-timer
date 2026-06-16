@@ -3,6 +3,7 @@ import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QHBoxLayout,
@@ -45,11 +46,14 @@ DEFAULT_SOUNDS = {
     "timeup": "custom_over",
     "overtime": "voice",
     "overtime_minutes": 5,
+    "overtime_scope_qa": True,
+    "overtime_scope_presentation": False,
 }
 
 DEFAULT_DISPLAY = {
     "opacity": 85,
     "float_size": "medium",
+    "show_topic_name": True,
 }
 
 DEFAULT_TIMES = {
@@ -101,8 +105,8 @@ class SettingsDialog(QDialog):
 
     def _setup_ui(self):
         self.setWindowTitle("设置")
-        self.setMinimumSize(500, 520)
-        self.resize(500, 520)
+        self.setMinimumSize(500, 560)
+        self.resize(500, 560)
         style_sheet = """
 QDialog {
     background-color: #FFFFFF;
@@ -320,6 +324,15 @@ QPushButton#secondaryBtn {
         size_row.addStretch()
         layout.addLayout(size_row)
 
+        self._show_topic_checkbox = QCheckBox("在悬浮窗口显示议题名")
+        self._show_topic_checkbox.setChecked(True)
+        self._show_topic_checkbox.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+            f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+            f"spacing: 8px;"
+        )
+        layout.addWidget(self._show_topic_checkbox)
+
     def _setup_sound_section(self, parent_layout):
         """设置声音部分的UI"""
         # 清除旧的声音控件
@@ -412,6 +425,35 @@ QPushButton#secondaryBtn {
                 spin_row.addWidget(spin)
                 spin_row.addStretch()
                 type_layout.addLayout(spin_row)
+
+                if sound_type == "overtime":
+                    scope_label = QLabel("适用范围")
+                    scope_label.setStyleSheet(ROW_LABEL_STYLE)
+                    scope_label.setFixedWidth(60)
+
+                    self._overtime_scope_qa_cb = QCheckBox("讨论阶段")
+                    self._overtime_scope_qa_cb.setChecked(True)
+                    self._overtime_scope_qa_cb.setStyleSheet(
+                        f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+                        f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+                        f"spacing: 6px;"
+                    )
+
+                    self._overtime_scope_pres_cb = QCheckBox("汇报阶段")
+                    self._overtime_scope_pres_cb.setChecked(False)
+                    self._overtime_scope_pres_cb.setStyleSheet(
+                        f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+                        f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+                        f"spacing: 6px;"
+                    )
+
+                    scope_row = QHBoxLayout()
+                    scope_row.setSpacing(10)
+                    scope_row.addWidget(scope_label)
+                    scope_row.addWidget(self._overtime_scope_qa_cb)
+                    scope_row.addWidget(self._overtime_scope_pres_cb)
+                    scope_row.addStretch()
+                    type_layout.addLayout(scope_row)
 
             parent_layout.addLayout(type_layout)
 
@@ -514,6 +556,7 @@ QPushButton#secondaryBtn {
                 size = display.get("float_size", DEFAULT_DISPLAY["float_size"])
                 size_map = {"small": 0, "medium": 1, "large": 2}
                 self._size_combo.setCurrentIndex(size_map.get(size, 1))
+                self._show_topic_checkbox.setChecked(display.get("show_topic_name", True))
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -531,6 +574,10 @@ QPushButton#secondaryBtn {
                         combo.setCurrentIndex(preset_idx)
                 for sound_type, spin in self._sound_spins.items():
                     spin.setValue(sounds.get(f"{sound_type}_minutes", DEFAULT_SOUNDS.get(f"{sound_type}_minutes", 5)))
+                if hasattr(self, '_overtime_scope_qa_cb'):
+                    self._overtime_scope_qa_cb.setChecked(sounds.get("overtime_scope_qa", True))
+                if hasattr(self, '_overtime_scope_pres_cb'):
+                    self._overtime_scope_pres_cb.setChecked(sounds.get("overtime_scope_presentation", False))
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -547,6 +594,7 @@ QPushButton#secondaryBtn {
         display = {
             "opacity": self._opacity_slider.value(),
             "float_size": size_map[self._size_combo.currentIndex()],
+            "show_topic_name": self._show_topic_checkbox.isChecked(),
         }
         self._db.set_setting(SETTING_KEY_DISPLAY, json.dumps(display))
 
@@ -558,6 +606,10 @@ QPushButton#secondaryBtn {
                 sounds[sound_type] = current_preset_keys[combo.currentIndex()]
         for sound_type, spin in self._sound_spins.items():
             sounds[f"{sound_type}_minutes"] = spin.value()
+        if hasattr(self, '_overtime_scope_qa_cb'):
+            sounds["overtime_scope_qa"] = self._overtime_scope_qa_cb.isChecked()
+        if hasattr(self, '_overtime_scope_pres_cb'):
+            sounds["overtime_scope_presentation"] = self._overtime_scope_pres_cb.isChecked()
         self._db.set_setting(SETTING_KEY_SOUNDS, json.dumps(sounds))
 
         self.accept()

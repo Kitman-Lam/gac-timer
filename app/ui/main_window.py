@@ -629,11 +629,14 @@ class MainWindow(QWidget):
             if self._audio.is_enabled("overtime"):
                 current_overtime_minute = int(overtime) // 60
                 if current_overtime_minute > 0 and current_overtime_minute > self._last_overtime_minute and current_overtime_minute % overtime_minutes == 0:
-                    self._last_overtime_minute = current_overtime_minute
+                    scope_qa = sounds.get("overtime_scope_qa", True)
+                    scope_pres = sounds.get("overtime_scope_presentation", False)
                     info = self._controller.get_current_info()
                     phase = info.get("phase", "presentation")
-                    self._audio.play_overtime_voice(current_overtime_minute, phase)
-                    self._audio.play("overtime")
+                    if (phase == "qa" and scope_qa) or (phase == "presentation" and scope_pres):
+                        self._last_overtime_minute = current_overtime_minute
+                        self._audio.play_overtime_voice(current_overtime_minute, phase)
+                        self._audio.play("overtime")
 
         self._update_topic_table_status()
 
@@ -834,6 +837,7 @@ class MainWindow(QWidget):
             display = dict(DEFAULT_DISPLAY)
         self._float_timer.set_opacity(display.get("opacity", 85))
         self._float_timer.set_size(display.get("float_size", "medium"))
+        self._float_timer.set_show_topic_name(display.get("show_topic_name", True))
 
         raw_sounds = self._db.get_setting(SETTING_KEY_SOUNDS)
         if raw_sounds:
@@ -931,8 +935,6 @@ class MainWindow(QWidget):
                     self._float_timer.set_topic_info(info.get("topic_name", ""), info.get("phase", "presentation"))
                     self._float_timer.show()
                     self._navbar.set_float_checked(True)
-                    if engine.state in (TimerEngine.OVERTIME, TimerEngine.PAUSED_OT):
-                        self._float_timer.suppress_pulse(self._recovery_overtime)
 
         msg_box.finished.connect(on_finished)
         msg_box.show()

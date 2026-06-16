@@ -4,8 +4,8 @@
 [Setup]
 AppId={{MEET-TIMER-20260616}}
 AppName=会帮手
-AppVersion=1.12
-AppVerName=会帮手 (MeetTimer) v1.12
+AppVersion=1.20
+AppVerName=会帮手 (MeetTimer) v1.20
 AppPublisher=GAC数字化部综合管控
 DefaultDirName={localappdata}\MeetTimer
 DefaultGroupName=会帮手
@@ -14,7 +14,7 @@ LicenseFile=
 InfoBeforeFile=
 InfoAfterFile=
 OutputDir=output
-OutputBaseFilename=MeetTimer_Setup_v1.12
+OutputBaseFilename=MeetTimer_Setup_v1.20
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest

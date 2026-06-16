@@ -53,10 +53,10 @@ class FloatTimer(QWidget):
         self._warning_mode = False
         self._phase = "presentation"
 
-        self._pulse_active = False
-        self._pulse_frame = 0
-        self._last_5min_block = 0
-        self._blink_counter = 0
+        self._topic_name = ""
+        self._scroll_offset = 0.0
+        self._scroll_speed = 0.75
+        self._show_topic_name = True
 
         self._warning_minutes = 5
         self._overtime_minutes = 5
@@ -89,12 +89,11 @@ class FloatTimer(QWidget):
         
         self._draw_pie(painter, cx, cy, radius)
 
+        self._draw_center_text(painter, cx, cy, radius)
+
         if self._is_running:
             self._draw_top_text(painter, cx, cy, radius)
             self._draw_bottom_text(painter, cx, cy, radius)
-            if self._is_paused:
-                self._draw_paused_text(painter, cx, cy, radius)
-        self._draw_center_text(painter, cx, cy, radius)
 
         painter.end()
 
@@ -108,32 +107,10 @@ class FloatTimer(QWidget):
         pie_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
 
         if self._is_overtime:
-            if self._pulse_active:
-                # 闪烁效果：快速闪烁，约 0.3 秒一次，持续 1 秒
-                cycle = 10
-                phase = self._pulse_frame % cycle
-                if phase < 5:
-                    alpha = 255
-                else:
-                    alpha = 40
-
-                gradient = QRadialGradient(cx, cy, radius)
-                gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER))
-                gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER))
-                
-                # 手动设置渐变透明度
-                if alpha < 255:
-                    gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER.red(), RED_GRADIENT_OUTER.green(), RED_GRADIENT_OUTER.blue(), self._opacity_alpha(alpha)))
-                    gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER.red(), RED_GRADIENT_CENTER.green(), RED_GRADIENT_CENTER.blue(), self._opacity_alpha(alpha)))
-                
-                painter.setBrush(gradient)
-            else:
-                # 不闪烁时正常显示红色
-                gradient = QRadialGradient(cx, cy, radius)
-                gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER))
-                gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER))
-                painter.setBrush(gradient)
-                
+            gradient = QRadialGradient(cx, cy, radius)
+            gradient.setColorAt(0, QColor(RED_GRADIENT_OUTER))
+            gradient.setColorAt(1, QColor(RED_GRADIENT_CENTER))
+            painter.setBrush(gradient)
             painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(30)), 1))
             painter.drawEllipse(pie_rect)
             return
@@ -148,6 +125,19 @@ class FloatTimer(QWidget):
             return
 
         if self._progress <= 0:
+            return
+
+        if self._phase == "qa" and not self._is_overtime:
+            gradient = QRadialGradient(cx, cy, radius)
+            if self._warning_mode:
+                gradient.setColorAt(0, QColor(ORANGE_GRADIENT_OUTER))
+                gradient.setColorAt(1, QColor(ORANGE_GRADIENT_CENTER))
+            else:
+                gradient.setColorAt(0, QColor(BLUE_GRADIENT_OUTER))
+                gradient.setColorAt(1, QColor(BLUE_GRADIENT_CENTER))
+            painter.setBrush(gradient)
+            painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(30)), 1))
+            painter.drawEllipse(pie_rect)
             return
 
         remaining_ratio = max(0.0, 1.0 - min(self._progress, 1.0))
@@ -167,7 +157,9 @@ class FloatTimer(QWidget):
 
     def _draw_glow_text(self, painter: QPainter, text: str,
                         font: QFont, fill_color: QColor,
-                        cx: float, cy: float, line2: str = None):
+                        cx: float, cy: float, line2: str = None,
+                        fixed_width: float = None,
+                        stroke_color: QColor = None):
         lines = [text]
         if line2:
             lines.append(line2)
@@ -177,12 +169,15 @@ class FloatTimer(QWidget):
             path = QPainterPath()
             path.addText(0, 0, font, line)
             br = path.boundingRect()
+            width = fixed_width if fixed_width is not None else br.width()
             y_offset = -br.y() + cy - (len(lines) * br.height() / 2) + i * (br.height() + 12)
-            path.translate(-br.x() + cx - br.width() / 2, y_offset)
+            path.translate(-br.x() + cx - width / 2, y_offset)
             full_path.addPath(path)
 
         stroke_width = max(1.5, self._current_size * 0.015)
-        painter.setPen(QPen(QColor(0, 0, 0, self._opacity_alpha(255)), stroke_width))
+        if stroke_color is None:
+            stroke_color = QColor(0, 0, 0, self._opacity_alpha(255))
+        painter.setPen(QPen(stroke_color, stroke_width))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(full_path)
         
@@ -191,29 +186,39 @@ class FloatTimer(QWidget):
         painter.drawPath(full_path)
 
     def _draw_top_text(self, painter: QPainter, cx: float, cy: float, radius: float):
-        if self._is_overtime:
-            text = "超时"
-        elif not self._is_running:
-            text = "会议未开始"
-        else:
-            text = "剩余时间"
+        if not self._show_topic_name:
+            return
+
+        text = self._topic_name if self._topic_name else "等待开始"
 
         font_size = max(8, int(radius * 0.18))
         font = QFont(FONT_FAMILY, font_size, QFont.Bold)
-        painter.setFont(font)
+        fm = QFontMetrics(font)
+        text_width = fm.horizontalAdvance(text)
 
+        max_width = int(radius * 1.4)
         y = cy - radius * 0.45
-
         fill_color = QColor(255, 255, 255)
-        self._draw_glow_text(painter, text, font, fill_color, cx, y)
+
+        if self._show_topic_name and text_width > max_width:
+            clip_rect = QRectF(cx - max_width / 2, y - font_size, max_width, font_size * 2)
+            painter.save()
+            painter.setClipRect(clip_rect)
+
+            x1 = cx + max_width / 2 - self._scroll_offset
+            x2 = x1 + text_width + 40
+            self._draw_glow_text(painter, text, font, fill_color, x1, y)
+            self._draw_glow_text(painter, text, font, fill_color, x2, y)
+
+            painter.restore()
+        else:
+            self._draw_glow_text(painter, text, font, fill_color, cx, y)
 
     def _draw_bottom_text(self, painter: QPainter, cx: float, cy: float, radius: float):
-        if self._is_overtime and self._is_paused:
-            text = "暂停"
-        elif self._phase == "qa":
-            text = "讨论中"
+        if self._phase == "qa":
+            text = "讨论暂停" if self._is_paused else "讨论中"
         else:
-            text = "汇报中"
+            text = "汇报暂停" if self._is_paused else "汇报中"
 
         font_size = max(8, int(radius * 0.18))
         font = QFont(FONT_FAMILY, font_size, QFont.Bold)
@@ -221,20 +226,25 @@ class FloatTimer(QWidget):
 
         y = cy + radius * 0.45
 
-        fill_color = QColor(255, 255, 255)
-        self._draw_glow_text(painter, text, font, fill_color, cx, y)
+        if self._is_paused:
+            fill_color = QColor(0xEB, 0x09, 0x1F)
+            stroke_color = QColor(255, 255, 255, self._opacity_alpha(255))
+        else:
+            fill_color = QColor(255, 255, 255)
+            stroke_color = None
+        self._draw_glow_text(painter, text, font, fill_color, cx, y, stroke_color=stroke_color)
 
     def _draw_center_text(self, painter: QPainter, cx: float, cy: float, radius: float):
         max_text_width = int(radius * 2 * 0.85)
 
-        if self._is_overtime:
+        if not self._is_running:
+            time_str = "会帮手"
+        elif self._is_overtime:
             time_str = format_time(self._overtime)
-        elif not self._is_running:
-            time_str = "--:--"
         else:
             time_str = format_time(self._remaining)
 
-        font_size = int(radius * 0.45)
+        font_size = int(radius * 0.45) if self._is_running else int(radius * 0.35)
         font = QFont(FONT_FAMILY, font_size, QFont.Bold)
         fm = QFontMetrics(font)
         while fm.horizontalAdvance(time_str) > max_text_width and font_size > 8:
@@ -242,25 +252,11 @@ class FloatTimer(QWidget):
             font = QFont(FONT_FAMILY, font_size, QFont.Bold)
             fm = QFontMetrics(font)
 
+        ref_str = "00:00" if self._is_running else "会帮手"
+        ref_width = fm.horizontalAdvance(ref_str)
         painter.setFont(font)
         fill_color = QColor(255, 255, 255)
-        self._draw_glow_text(painter, time_str, font, fill_color, cx, cy)
-
-    def _draw_paused_text(self, painter: QPainter, cx: float, cy: float, radius: float):
-        if self._is_overtime and self._is_paused:
-            blinking = self._blink_counter % 40 < 20
-            if not blinking:
-                return
-
-        text = "暂停"
-        font_size = max(8, int(radius * 0.18))
-        font = QFont(FONT_FAMILY, font_size, QFont.Bold)
-        painter.setFont(font)
-
-        y = cy + radius * 0.75
-
-        fill_color = QColor(DANGER)
-        self._draw_glow_text(painter, text, font, fill_color, cx, y)
+        self._draw_glow_text(painter, time_str, font, fill_color, cx, cy, fixed_width=ref_width)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -331,46 +327,26 @@ class FloatTimer(QWidget):
 
         self._warning_mode = is_countdown and not is_overtime and 0 < remaining <= self._warning_minutes * 60
 
-        if is_overtime:
-            overtime_seconds = max(0, int(overtime))
-            current_interval_block = overtime_seconds // (self._overtime_minutes * 60) if self._overtime_minutes > 0 else 0
-            if current_interval_block > self._last_5min_block:
-                self._pulse_active = True
-                self._pulse_frame = 0
-                self._last_5min_block = current_interval_block
-
-            if self._pulse_active:
-                self._pulse_frame += 1
-                # 持续 1 秒（约 60 帧）
-                if self._pulse_frame > 60:
-                    self._pulse_active = False
-        else:
-            self._pulse_active = False
-            self._pulse_frame = 0
-            self._last_5min_block = 0
-
-        if self._is_paused:
-            self._blink_counter = (self._blink_counter + 1) % 40
+        if self._is_running and self._show_topic_name:
+            self._scroll_offset += self._scroll_speed
+            font_size = max(8, int(self._current_size / 2 * 0.18))
+            fm = QFontMetrics(QFont(FONT_FAMILY, font_size, QFont.Bold))
+            text = self._topic_name if self._topic_name else "等待开始"
+            text_width = fm.horizontalAdvance(text)
+            if self._scroll_offset > text_width + 40:
+                self._scroll_offset = 0.0
 
         self.update()
 
     def set_topic_info(self, topic_name: str, phase: str):
+        self._topic_name = topic_name or ""
         self._phase = phase
+        self._scroll_offset = 0.0
         self.update()
 
     def set_reminder_config(self, remaining_minutes: int, overtime_minutes: int):
         self._warning_minutes = remaining_minutes
         self._overtime_minutes = overtime_minutes
-
-    def suppress_pulse(self, overtime_seconds: float = None):
-        self._pulse_active = False
-        self._pulse_frame = 0
-        if overtime_seconds is None:
-            overtime_seconds = max(0, int(self._overtime))
-        else:
-            overtime_seconds = max(0, int(overtime_seconds))
-        if self._overtime_minutes > 0:
-            self._last_5min_block = overtime_seconds // (self._overtime_minutes * 60)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -416,6 +392,11 @@ class FloatTimer(QWidget):
             self._float_size = size_key
             self._current_size = FLOAT_SIZE_MAP[size_key]
             self._apply_size()
+
+    def set_show_topic_name(self, show: bool):
+        self._show_topic_name = show
+        self._scroll_offset = 0.0
+        self.update()
 
     def _apply_size(self):
         self.setFixedSize(self._current_size, self._current_size)

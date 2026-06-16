@@ -1,6 +1,6 @@
 [project]
 name = "hui-bang-shou"
-version = "1.0.0"
+version = "1.20.0"
 description = "会帮手 - Windows Meeting Topic Timer"
 readme = "README.md"
 requires-python = ">=3.11"
