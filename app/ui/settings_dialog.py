@@ -180,17 +180,9 @@ QPushButton#secondaryBtn {
         basic_layout.setContentsMargins(8, 8, 8, 8)
         basic_layout.setSpacing(12)
         self._setup_defaults_section(basic_layout)
+        self._setup_display_section(basic_layout)
         basic_layout.addStretch()
         tabs.addTab(basic_tab, "基础配置")
-
-        # 悬浮窗口设置
-        display_tab = QWidget()
-        display_layout = QVBoxLayout(display_tab)
-        display_layout.setContentsMargins(8, 8, 8, 8)
-        display_layout.setSpacing(12)
-        self._setup_display_section(display_layout)
-        display_layout.addStretch()
-        tabs.addTab(display_tab, "悬浮窗口设置")
 
         # 提示设置
         sound_tab = QWidget()
@@ -272,11 +264,6 @@ QPushButton#secondaryBtn {
         display_label = QLabel("显示设置")
         display_label.setStyleSheet(SECTION_LABEL_STYLE)
         layout.addWidget(display_label)
-
-        display_hint = QLabel("透明度、悬浮窗口大小效果需要点击「保存」后生效")
-        display_hint.setStyleSheet(SUB_LABEL_STYLE)
-        display_hint.setWordWrap(True)
-        layout.addWidget(display_hint)
 
         opacity_label = QLabel("透明度")
         opacity_label.setStyleSheet(ROW_LABEL_STYLE)

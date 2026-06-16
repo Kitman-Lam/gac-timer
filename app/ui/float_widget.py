@@ -110,7 +110,7 @@ class FloatTimer(QWidget):
         if self._is_overtime:
             if self._pulse_active:
                 # 闪烁效果：快速闪烁，约 0.3 秒一次，持续 1 秒
-                cycle = 20  # 更快的闪烁周期
+                cycle = 10
                 phase = self._pulse_frame % cycle
                 if phase < 10:
                     alpha = 255
@@ -358,9 +358,16 @@ class FloatTimer(QWidget):
         self._phase = phase
         self.update()
 
-    def set_reminder_config(self, warning_minutes: int, overtime_minutes: int):
-        self._warning_minutes = warning_minutes
+    def set_reminder_config(self, remaining_minutes: int, overtime_minutes: int):
+        self._warning_minutes = remaining_minutes
         self._overtime_minutes = overtime_minutes
+
+    def suppress_pulse(self):
+        self._pulse_active = False
+        self._pulse_frame = 0
+        overtime_seconds = max(0, int(self._overtime))
+        if self._overtime_minutes > 0:
+            self._last_5min_block = overtime_seconds // (self._overtime_minutes * 60)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)

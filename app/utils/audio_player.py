@@ -26,7 +26,7 @@ SOUND_TYPES = {
 DEFAULT_SOUND_SELECTIONS = {
     "warning": "custom_TPBTLOW",
     "timeup": "custom_over",
-    "overtime": "custom_001",
+    "overtime": "voice",
 }
 
 

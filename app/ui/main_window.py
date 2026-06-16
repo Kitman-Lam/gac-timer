@@ -787,16 +787,19 @@ class MainWindow(QWidget):
         elif hotkey_id == HOTKEY_FLOAT_SMALL:
             if self._float_timer:
                 self._float_timer.set_size("small")
+                self._save_float_size("small")
                 if not self._float_timer.isVisible():
                     self._float_timer.show()
         elif hotkey_id == HOTKEY_FLOAT_MEDIUM:
             if self._float_timer:
                 self._float_timer.set_size("medium")
+                self._save_float_size("medium")
                 if not self._float_timer.isVisible():
                     self._float_timer.show()
         elif hotkey_id == HOTKEY_FLOAT_LARGE:
             if self._float_timer:
                 self._float_timer.set_size("large")
+                self._save_float_size("large")
                 if not self._float_timer.isVisible():
                     self._float_timer.show()
                     self._navbar.set_float_checked(True)
@@ -830,6 +833,18 @@ class MainWindow(QWidget):
             display = dict(DEFAULT_DISPLAY)
         self._float_timer.set_opacity(display.get("opacity", 85))
         self._float_timer.set_size(display.get("float_size", "medium"))
+
+    def _save_float_size(self, size: str):
+        raw = self._db.get_setting(SETTING_KEY_DISPLAY)
+        if raw:
+            try:
+                display = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                display = dict(DEFAULT_DISPLAY)
+        else:
+            display = dict(DEFAULT_DISPLAY)
+        display["float_size"] = size
+        self._db.set_setting(SETTING_KEY_DISPLAY, json.dumps(display))
 
         raw_sounds = self._db.get_setting(SETTING_KEY_SOUNDS)
         if raw_sounds:
@@ -868,6 +883,8 @@ class MainWindow(QWidget):
                 self._meeting_name_label.setText(meeting.name)
                 self._warning_triggered = False
                 self._overtime_triggered = False
+                self._remaining_minutes_triggered = False
+                self._last_overtime_minute = 0
                 self._navbar.set_float_checked(True)
 
                 self._controller.recover_meeting(meeting.id)
@@ -875,6 +892,13 @@ class MainWindow(QWidget):
                 engine = self._controller.engine
                 is_paused = engine.state in (TimerEngine.PAUSED_CD, TimerEngine.PAUSED_OT)
                 self._pause_resume_btn.setText("继续" if is_paused else "暂停")
+
+                if engine.state in (TimerEngine.OVERTIME, TimerEngine.PAUSED_OT):
+                    self._overtime_triggered = True
+                    self._remaining_minutes_triggered = True
+                    tick = engine.tick()
+                    overtime = tick.get("overtime_seconds", 0.0)
+                    self._last_overtime_minute = int(overtime) // 60
 
                 info = self._controller.get_current_info()
                 self._topic_name_label.setText(info.get("topic_name", ""))
@@ -890,6 +914,8 @@ class MainWindow(QWidget):
                     self._float_timer.set_topic_info(info.get("topic_name", ""), info.get("phase", "presentation"))
                     self._float_timer.show()
                     self._navbar.set_float_checked(True)
+                    if engine.state in (TimerEngine.OVERTIME, TimerEngine.PAUSED_OT):
+                        self._float_timer.suppress_pulse()
 
         msg_box.finished.connect(on_finished)
         msg_box.show()
