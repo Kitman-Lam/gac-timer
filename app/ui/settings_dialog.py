@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -44,10 +45,13 @@ DEFAULT_SOUNDS = {
     "warning": "custom_TPBTLOW",
     "remaining_minutes": 5,
     "timeup": "custom_over",
+    "timeup_scope_qa": True,
+    "timeup_scope_presentation": True,
     "overtime": "voice",
     "overtime_minutes": 5,
     "overtime_scope_qa": True,
     "overtime_scope_presentation": False,
+    "overtime_voice_text": "已进行",
 }
 
 DEFAULT_DISPLAY = {
@@ -105,8 +109,8 @@ class SettingsDialog(QDialog):
 
     def _setup_ui(self):
         self.setWindowTitle("设置")
-        self.setMinimumSize(500, 560)
-        self.resize(500, 560)
+        self.setMinimumSize(570, 530)
+        self.resize(570, 530)
         style_sheet = """
 QDialog {
     background-color: #FFFFFF;
@@ -402,19 +406,12 @@ QPushButton#secondaryBtn {
                 lambda checked=False, cb=combo: self._on_preview_sound(cb)
             )
             combo_row.addWidget(preview_btn)
-            combo_row.addStretch()
 
-            type_layout.addLayout(combo_row)
-
-            if sound_type != "timeup":
-                spin_row = QHBoxLayout()
-                spin_row.setSpacing(10)
-
-                spin_label_text = "提醒间隔" if sound_type == "overtime" else "提前时长"
-                spin_label = QLabel(spin_label_text)
+            if sound_type == "warning":
+                spin_label = QLabel("提前时长")
                 spin_label.setStyleSheet(ROW_LABEL_STYLE)
                 spin_label.setFixedWidth(60)
-                spin_row.addWidget(spin_label)
+                combo_row.addWidget(spin_label)
 
                 spin = QSpinBox()
                 spin.setRange(1, 30)
@@ -422,38 +419,105 @@ QPushButton#secondaryBtn {
                 spin.setSuffix(" 分钟")
                 spin.setStyleSheet(INPUT_STYLE)
                 self._sound_spins[sound_type] = spin
-                spin_row.addWidget(spin)
-                spin_row.addStretch()
-                type_layout.addLayout(spin_row)
+                combo_row.addWidget(spin)
 
-                if sound_type == "overtime":
-                    scope_label = QLabel("适用范围")
-                    scope_label.setStyleSheet(ROW_LABEL_STYLE)
-                    scope_label.setFixedWidth(60)
+            if sound_type == "overtime":
+                spin_label = QLabel("提醒间隔")
+                spin_label.setStyleSheet(ROW_LABEL_STYLE)
+                spin_label.setFixedWidth(60)
+                combo_row.addWidget(spin_label)
 
-                    self._overtime_scope_qa_cb = QCheckBox("讨论阶段")
-                    self._overtime_scope_qa_cb.setChecked(True)
-                    self._overtime_scope_qa_cb.setStyleSheet(
-                        f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
-                        f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
-                        f"spacing: 6px;"
-                    )
+                spin = QSpinBox()
+                spin.setRange(1, 30)
+                spin.setValue(DEFAULT_SOUNDS.get(f"{sound_type}_minutes", 5))
+                spin.setSuffix(" 分钟")
+                spin.setStyleSheet(INPUT_STYLE)
+                self._sound_spins[sound_type] = spin
+                combo_row.addWidget(spin)
 
-                    self._overtime_scope_pres_cb = QCheckBox("汇报阶段")
-                    self._overtime_scope_pres_cb.setChecked(False)
-                    self._overtime_scope_pres_cb.setStyleSheet(
-                        f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
-                        f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
-                        f"spacing: 6px;"
-                    )
+            combo_row.addStretch()
 
-                    scope_row = QHBoxLayout()
-                    scope_row.setSpacing(10)
-                    scope_row.addWidget(scope_label)
-                    scope_row.addWidget(self._overtime_scope_qa_cb)
-                    scope_row.addWidget(self._overtime_scope_pres_cb)
-                    scope_row.addStretch()
-                    type_layout.addLayout(scope_row)
+            type_layout.addLayout(combo_row)
+
+            if sound_type == "timeup":
+                scope_label = QLabel("适用范围")
+                scope_label.setStyleSheet(ROW_LABEL_STYLE)
+                scope_label.setFixedWidth(60)
+
+                self._timeup_scope_pres_cb = QCheckBox("汇报阶段")
+                self._timeup_scope_pres_cb.setChecked(True)
+                self._timeup_scope_pres_cb.setStyleSheet(
+                    f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+                    f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+                    f"spacing: 6px;"
+                )
+
+                self._timeup_scope_qa_cb = QCheckBox("讨论阶段")
+                self._timeup_scope_qa_cb.setChecked(True)
+                self._timeup_scope_qa_cb.setStyleSheet(
+                    f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+                    f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+                    f"spacing: 6px;"
+                )
+
+                scope_row = QHBoxLayout()
+                scope_row.setSpacing(10)
+                scope_row.addWidget(scope_label)
+                scope_row.addWidget(self._timeup_scope_pres_cb)
+                scope_row.addWidget(self._timeup_scope_qa_cb)
+                scope_row.addStretch()
+                type_layout.addLayout(scope_row)
+
+            if sound_type == "overtime":
+                scope_label = QLabel("适用范围")
+                scope_label.setStyleSheet(ROW_LABEL_STYLE)
+                scope_label.setFixedWidth(60)
+
+                self._overtime_scope_pres_cb = QCheckBox("汇报阶段")
+                self._overtime_scope_pres_cb.setChecked(False)
+                self._overtime_scope_pres_cb.setStyleSheet(
+                    f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+                    f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+                    f"spacing: 6px;"
+                )
+
+                self._overtime_scope_qa_cb = QCheckBox("讨论阶段")
+                self._overtime_scope_qa_cb.setChecked(True)
+                self._overtime_scope_qa_cb.setStyleSheet(
+                    f"color: {TEXT_PRIMARY}; font-size: {FONT_SIZE_MEDIUM}px; "
+                    f"font-family: '{FONT_FAMILY}'; background: transparent; border: none;"
+                    f"spacing: 6px;"
+                )
+
+                scope_row = QHBoxLayout()
+                scope_row.setSpacing(10)
+                scope_row.addWidget(scope_label)
+                scope_row.addWidget(self._overtime_scope_pres_cb)
+                scope_row.addWidget(self._overtime_scope_qa_cb)
+                scope_row.addStretch()
+                type_layout.addLayout(scope_row)
+
+                voice_row = QHBoxLayout()
+                voice_row.setSpacing(10)
+
+                voice_label = QLabel("语音播报文案")
+                voice_label.setStyleSheet(ROW_LABEL_STYLE)
+                voice_label.setFixedWidth(90)
+                voice_row.addWidget(voice_label)
+
+                self._overtime_voice_edit = QLineEdit(DEFAULT_SOUNDS.get("overtime_voice_text", "已进行"))
+                self._overtime_voice_edit.setReadOnly(True)
+                self._overtime_voice_edit.setStyleSheet(INPUT_STYLE)
+                self._overtime_voice_edit.setMaximumWidth(200)
+                self._overtime_voice_edit.mouseDoubleClickEvent = (
+                    lambda event, e=self._overtime_voice_edit: self._on_voice_text_double_click(e)
+                )
+                self._overtime_voice_edit.editingFinished.connect(
+                    lambda e=self._overtime_voice_edit: e.setReadOnly(True)
+                )
+                voice_row.addWidget(self._overtime_voice_edit)
+                voice_row.addStretch()
+                type_layout.addLayout(voice_row)
 
             parent_layout.addLayout(type_layout)
 
@@ -509,7 +573,18 @@ QPushButton#secondaryBtn {
         
         # 刷新完成
         self._is_loading = False
-        
+
+        if hasattr(self, '_overtime_voice_edit'):
+            combo = self._sound_combos.get("overtime")
+            if combo and combo.currentIndex() >= 0:
+                keys = combo.property("preset_keys")
+                is_voice = keys and keys[combo.currentIndex()] == "voice"
+                self._overtime_voice_edit.setReadOnly(not is_voice)
+                if not is_voice:
+                    self._overtime_voice_edit.setStyleSheet(INPUT_STYLE + "color: rgba(0,0,0,0.4);")
+                else:
+                    self._overtime_voice_edit.setStyleSheet(INPUT_STYLE)
+
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(
             self, 
@@ -525,6 +600,28 @@ QPushButton#secondaryBtn {
         if preset_keys and 0 <= idx < len(preset_keys):
             selected_key = preset_keys[idx]
             self._audio.preview(selected_key)
+
+        if sound_type == "overtime" and hasattr(self, '_overtime_voice_edit'):
+            if combo.currentIndex() >= 0:
+                keys = combo.property("preset_keys")
+                is_voice = keys and keys[combo.currentIndex()] == "voice"
+                self._overtime_voice_edit.setReadOnly(not is_voice)
+                if not is_voice:
+                    self._overtime_voice_edit.setStyleSheet(
+                        INPUT_STYLE + "color: rgba(0,0,0,0.4);"
+                    )
+                else:
+                    self._overtime_voice_edit.setStyleSheet(INPUT_STYLE)
+
+    def _on_voice_text_double_click(self, edit: QLineEdit):
+        combo = self._sound_combos.get("overtime")
+        if combo is None:
+            return
+        keys = combo.property("preset_keys")
+        if keys and combo.currentIndex() >= 0 and keys[combo.currentIndex()] == "voice":
+            edit.setReadOnly(False)
+            edit.setFocus()
+            edit.selectAll()
 
     def _on_preview_sound(self, combo: QComboBox):
         idx = combo.currentIndex()
@@ -578,6 +675,21 @@ QPushButton#secondaryBtn {
                     self._overtime_scope_qa_cb.setChecked(sounds.get("overtime_scope_qa", True))
                 if hasattr(self, '_overtime_scope_pres_cb'):
                     self._overtime_scope_pres_cb.setChecked(sounds.get("overtime_scope_presentation", False))
+                if hasattr(self, '_timeup_scope_qa_cb'):
+                    self._timeup_scope_qa_cb.setChecked(sounds.get("timeup_scope_qa", True))
+                if hasattr(self, '_timeup_scope_pres_cb'):
+                    self._timeup_scope_pres_cb.setChecked(sounds.get("timeup_scope_presentation", True))
+                if hasattr(self, '_overtime_voice_edit'):
+                    self._overtime_voice_edit.setText(sounds.get("overtime_voice_text", "已进行"))
+                    combo = self._sound_combos.get("overtime")
+                    if combo and combo.currentIndex() >= 0:
+                        keys = combo.property("preset_keys")
+                        is_voice = keys and keys[combo.currentIndex()] == "voice"
+                        self._overtime_voice_edit.setReadOnly(not is_voice)
+                        if not is_voice:
+                            self._overtime_voice_edit.setStyleSheet(INPUT_STYLE + "color: rgba(0,0,0,0.4);")
+                        else:
+                            self._overtime_voice_edit.setStyleSheet(INPUT_STYLE)
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -610,6 +722,12 @@ QPushButton#secondaryBtn {
             sounds["overtime_scope_qa"] = self._overtime_scope_qa_cb.isChecked()
         if hasattr(self, '_overtime_scope_pres_cb'):
             sounds["overtime_scope_presentation"] = self._overtime_scope_pres_cb.isChecked()
+        if hasattr(self, '_timeup_scope_qa_cb'):
+            sounds["timeup_scope_qa"] = self._timeup_scope_qa_cb.isChecked()
+        if hasattr(self, '_timeup_scope_pres_cb'):
+            sounds["timeup_scope_presentation"] = self._timeup_scope_pres_cb.isChecked()
+        if hasattr(self, '_overtime_voice_edit'):
+            sounds["overtime_voice_text"] = self._overtime_voice_edit.text()
         self._db.set_setting(SETTING_KEY_SOUNDS, json.dumps(sounds))
 
         self.accept()

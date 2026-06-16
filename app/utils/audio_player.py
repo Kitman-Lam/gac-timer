@@ -107,12 +107,12 @@ class AudioPlayer:
         if file_path is not None:
             self._play_file(file_path)
 
-    def play_overtime_voice(self, minutes: int, phase: str = ""):
+    def play_overtime_voice(self, minutes: int, phase: str = "", voice_text: str = "已进行"):
         if self._selections.get("overtime", "none") != "voice":
             return
         from app.utils.tts import speak_async
         phase_name = "汇报" if phase == "presentation" else "讨论"
-        speak_async(f"{phase_name}已延时{minutes}分钟")
+        speak_async(f"{phase_name}{voice_text}{minutes}分钟")
 
     def preview(self, preset_key: str):
         if preset_key == "none":

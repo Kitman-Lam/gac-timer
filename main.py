@@ -1,5 +1,6 @@
 import sys
 import os
+import atexit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -54,6 +55,7 @@ def _create_clock_icon() -> QIcon:
 def _check_single_instance():
     import tempfile
     import os
+    import ctypes
     
     lock_dir = os.path.join(tempfile.gettempdir(), "MeetTimer")
     os.makedirs(lock_dir, exist_ok=True)
@@ -64,11 +66,11 @@ def _check_single_instance():
             try:
                 with open(lock_file, 'r') as f:
                     pid = int(f.read().strip())
-                    try:
-                        os.kill(pid, 0)
-                        return False
-                    except (OSError, ValueError):
-                        pass
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(0x0400, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return False
             except Exception:
                 pass
         
@@ -79,7 +81,46 @@ def _check_single_instance():
         return True
 
 
+def _cleanup_lock():
+    import tempfile
+    import os
+    lock_file = os.path.join(tempfile.gettempdir(), "MeetTimer", "instance.lock")
+    try:
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
+    except Exception:
+        pass
+
+
+def _set_windows_process_name():
+    try:
+        if sys.platform == 'win32':
+            import ctypes
+            ctypes.windll.kernel32.SetConsoleTitleW("会帮手")
+            # 这是为任务管理器显示设置正确的进程名
+            try:
+                # 使用psutil库（如果可用）
+                import psutil
+                current_process = psutil.Process()
+                current_process.name = "会帮手"
+            except ImportError:
+                # 如果psutil不可用，使用更底层的方法
+                try:
+                    # 使用SetProcessNameW（需要调用SetConsoleTitleA/W）
+                    import ctypes
+                    kernel32 = ctypes.windll.kernel32
+                    kernel32.SetConsoleTitleW("会帮手")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 def main():
+    # 先设置Windows进程名称
+    _set_windows_process_name()
+    
+    atexit.register(_cleanup_lock)
     if not _check_single_instance():
         app = QApplication(sys.argv)
         msg_box = QMessageBox()

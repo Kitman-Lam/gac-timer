@@ -30,21 +30,21 @@ UninstallDisplayName=会帮手 (MeetTimer)
 Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Files]
-Source: "dist\MeetTimer\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+Source: "dist\会帮手\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 
 [Dirs]
 Name: "{app}\logs"
 
 [Icons]
-Name: "{group}\会帮手"; Filename: "{app}\MeetTimer.exe"; WorkingDir: "{app}"
+Name: "{group}\会帮手"; Filename: "{app}\会帮手.exe"; WorkingDir: "{app}"
 Name: "{group}\卸载 会帮手"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\会帮手"; Filename: "{app}\MeetTimer.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{commondesktop}\会帮手"; Filename: "{app}\会帮手.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\MeetTimer.exe"; Description: "启动 会帮手"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\会帮手.exe"; Description: "启动 会帮手"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\logs"

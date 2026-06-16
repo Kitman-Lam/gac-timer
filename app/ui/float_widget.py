@@ -240,10 +240,10 @@ class FloatTimer(QWidget):
 
         if not self._is_running:
             time_str = "会帮手"
-        elif self._is_overtime:
-            time_str = format_time(self._overtime)
         elif self._phase == "qa":
             time_str = format_time(self._actual_seconds)
+        elif self._is_overtime:
+            time_str = format_time(self._overtime)
         else:
             time_str = format_time(self._remaining)
 
@@ -310,7 +310,12 @@ class FloatTimer(QWidget):
             self.move(new_pos)
 
     def mouseDoubleClickEvent(self, event):
-        self.close_clicked.emit()
+        if event.modifiers() & Qt.ControlModifier:
+            self._show_topic_name = not self._show_topic_name
+            self._scroll_offset = 0.0
+            self.update()
+        else:
+            self.pause_requested.emit()
 
     def update_display(self, tick_data: dict):
         progress = tick_data.get("progress", 0.0)

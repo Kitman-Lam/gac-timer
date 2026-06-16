@@ -538,19 +538,34 @@ class MainWindow(QWidget):
         is_countdown = tick_data.get("is_countdown", False)
 
         if is_overtime:
-            display_text = format_time(overtime)
+            info = self._controller.get_current_info()
+            if info.get("phase") == "qa":
+                actual_seconds = tick_data.get("actual_seconds", 0)
+                display_text = format_time(actual_seconds)
+            else:
+                display_text = format_time(overtime)
             self._time_display_label.setStyleSheet(
                 f"color: {DANGER}; font-size: 40px; font-weight: 700; "
                 f"line-height: 1.50; background: transparent; border: none;"
             )
         elif is_paused:
-            display_text = format_time(remaining)
+            info = self._controller.get_current_info()
+            if info.get("phase") == "qa":
+                actual_seconds = tick_data.get("actual_seconds", 0)
+                display_text = format_time(actual_seconds)
+            else:
+                display_text = format_time(remaining)
             self._time_display_label.setStyleSheet(
                 f"color: {WARNING}; font-size: 40px; font-weight: 700; "
                 f"line-height: 1.50; background: transparent; border: none;"
             )
         else:
-            display_text = format_time(remaining)
+            info = self._controller.get_current_info()
+            if info.get("phase") == "qa":
+                actual_seconds = tick_data.get("actual_seconds", 0)
+                display_text = format_time(actual_seconds)
+            else:
+                display_text = format_time(remaining)
             self._time_display_label.setStyleSheet(
                 f"color: {TEXT_PRIMARY}; font-size: 40px; font-weight: 700; "
                 f"line-height: 1.50; background: transparent; border: none;"
@@ -601,8 +616,21 @@ class MainWindow(QWidget):
             self._warning_triggered = True
 
         if is_overtime and not self._overtime_triggered:
-            self._overtime_triggered = True
-            self._audio.play("timeup")
+            info = self._controller.get_current_info()
+            phase = info.get("phase", "presentation")
+            raw = self._db.get_setting(SETTING_KEY_SOUNDS)
+            scope_qa = True
+            scope_pres = True
+            if raw:
+                try:
+                    sounds = json.loads(raw)
+                    scope_qa = sounds.get("timeup_scope_qa", True)
+                    scope_pres = sounds.get("timeup_scope_presentation", True)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if (phase == "qa" and scope_qa) or (phase == "presentation" and scope_pres):
+                self._overtime_triggered = True
+                self._audio.play("timeup")
 
         if is_countdown and not is_overtime and not self._remaining_minutes_triggered:
             raw = self._db.get_setting(SETTING_KEY_SOUNDS)
@@ -627,15 +655,20 @@ class MainWindow(QWidget):
                 except (json.JSONDecodeError, TypeError):
                     pass
             if self._audio.is_enabled("overtime"):
-                current_overtime_minute = int(overtime) // 60
-                if current_overtime_minute > 0 and current_overtime_minute > self._last_overtime_minute and current_overtime_minute % overtime_minutes == 0:
+                actual_seconds = tick_data.get("actual_seconds", 0)
+                total_elapsed_minutes = int(actual_seconds) // 60
+                planned_seconds = tick_data.get("planned_seconds", 0)
+                planned_minutes = planned_seconds // 60
+                overtime_elapsed_minutes = max(0, total_elapsed_minutes - planned_minutes)
+                if overtime_elapsed_minutes > 0 and overtime_elapsed_minutes > self._last_overtime_minute and overtime_elapsed_minutes % overtime_minutes == 0:
                     scope_qa = sounds.get("overtime_scope_qa", True)
                     scope_pres = sounds.get("overtime_scope_presentation", False)
                     info = self._controller.get_current_info()
                     phase = info.get("phase", "presentation")
                     if (phase == "qa" and scope_qa) or (phase == "presentation" and scope_pres):
-                        self._last_overtime_minute = current_overtime_minute
-                        self._audio.play_overtime_voice(current_overtime_minute, phase)
+                        self._last_overtime_minute = overtime_elapsed_minutes
+                        voice_text = sounds.get("overtime_voice_text", "已进行")
+                        self._audio.play_overtime_voice(total_elapsed_minutes, phase, voice_text)
                         self._audio.play("overtime")
 
         self._update_topic_table_status()
