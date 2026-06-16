@@ -43,7 +43,7 @@ DEFAULT_SOUNDS = {
     "warning": "custom_TPBTLOW",
     "remaining_minutes": 5,
     "timeup": "custom_over",
-    "overtime": "custom_001",
+    "overtime": "voice",
     "overtime_minutes": 5,
 }
 
@@ -342,9 +342,6 @@ QPushButton#secondaryBtn {
         
         parent_layout.addLayout(sound_section_layout)
 
-        preset_keys = list(SOUND_PRESETS.keys())
-        preset_names = list(SOUND_PRESETS.values())
-
         for sound_type, type_label in SOUND_TYPES.items():
             type_layout = QVBoxLayout()
             type_layout.setSpacing(8)
@@ -361,9 +358,15 @@ QPushButton#secondaryBtn {
             sound_label_row.setFixedWidth(60)
             combo_row.addWidget(sound_label_row)
 
-            # 使用当前的声音预设列表（包含自定义声音）
-            current_preset_keys = list(SOUND_PRESETS.keys())
-            current_preset_names = list(SOUND_PRESETS.values())
+            # 根据声音类型构建预设列表
+            # warning 和 timeup 不包含 voice（语音播报）选项
+            current_preset_keys = []
+            current_preset_names = []
+            for key, name in SOUND_PRESETS.items():
+                if (sound_type in ["warning", "timeup"]) and key == "voice":
+                    continue  # warning 和 timeup 不显示语音播报
+                current_preset_keys.append(key)
+                current_preset_names.append(name)
             
             combo = QComboBox()
             combo.addItems(current_preset_names)
@@ -402,7 +405,7 @@ QPushButton#secondaryBtn {
 
                 spin = QSpinBox()
                 spin.setRange(1, 30)
-                spin.setValue(5)
+                spin.setValue(DEFAULT_SOUNDS.get(f"{sound_type}_minutes", 5))
                 spin.setSuffix(" 分钟")
                 spin.setStyleSheet(INPUT_STYLE)
                 self._sound_spins[sound_type] = spin
@@ -432,8 +435,15 @@ QPushButton#secondaryBtn {
         
         # 现在更新所有的下拉列表
         for sound_type, combo in self._sound_combos.items():
-            current_preset_keys = list(SOUND_PRESETS.keys())
-            current_preset_names = list(SOUND_PRESETS.values())
+            # 根据声音类型构建预设列表
+            current_preset_keys = []
+            current_preset_names = []
+            for key, name in SOUND_PRESETS.items():
+                if (sound_type in ["warning", "timeup"]) and key == "voice":
+                    continue  # warning 和 timeup 不显示语音播报
+                current_preset_keys.append(key)
+                current_preset_names.append(name)
+            
             combo.clear()
             combo.addItems(current_preset_names)
             combo.setProperty("preset_keys", current_preset_keys)
@@ -444,6 +454,11 @@ QPushButton#secondaryBtn {
                 if saved_key in current_preset_keys:
                     idx = current_preset_keys.index(saved_key)
                     combo.setCurrentIndex(idx)
+                # 如果之前选中了 voice，但该类型不支持，则使用默认值
+                elif (sound_type in ["warning", "timeup"]) and saved_key == "voice":
+                    default_key = DEFAULT_SOUNDS.get(sound_type)
+                    if default_key and default_key in current_preset_keys:
+                        combo.setCurrentIndex(current_preset_keys.index(default_key))
         
         # 恢复spin的值
         for sound_type, spin in self._sound_spins.items():
