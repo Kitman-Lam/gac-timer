@@ -629,6 +629,9 @@ class MainWindow(QWidget):
                 current_overtime_minute = int(overtime) // 60
                 if current_overtime_minute > 0 and current_overtime_minute > self._last_overtime_minute and current_overtime_minute % overtime_minutes == 0:
                     self._last_overtime_minute = current_overtime_minute
+                    info = self._controller.get_current_info()
+                    phase = info.get("phase", "presentation")
+                    self._audio.play_overtime_voice(current_overtime_minute, phase)
                     self._audio.play("overtime")
 
         self._update_topic_table_status()

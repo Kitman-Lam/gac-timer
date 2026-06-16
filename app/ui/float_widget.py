@@ -227,9 +227,7 @@ class FloatTimer(QWidget):
     def _draw_center_text(self, painter: QPainter, cx: float, cy: float, radius: float):
         max_text_width = int(radius * 2 * 0.85)
 
-        if self._is_overtime and self._is_paused:
-            time_str = "-" + format_time(self._overtime)
-        elif self._is_overtime:
+        if self._is_overtime:
             time_str = format_time(self._overtime)
         elif not self._is_running:
             time_str = "--:--"
