@@ -4,8 +4,8 @@
 [Setup]
 AppId={{MEET-TIMER-20260616}}
 AppName=会帮手
-AppVersion=1.20
-AppVerName=会帮手 (MeetTimer) v1.20
+AppVersion=1.21
+AppVerName=会帮手 (MeetTimer) v1.21
 AppPublisher=GAC数字化部综合管控
 DefaultDirName={localappdata}\MeetTimer
 DefaultGroupName=会帮手
@@ -14,7 +14,7 @@ LicenseFile=
 InfoBeforeFile=
 InfoAfterFile=
 OutputDir=output
-OutputBaseFilename=MeetTimer_Setup_v1.20
+OutputBaseFilename=MeetTimer_Setup_v1.21
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=lowest
@@ -30,21 +30,21 @@ UninstallDisplayName=会帮手 (MeetTimer)
 Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Files]
-Source: "dist\会帮手\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+Source: "dist\MeetTimer\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 
 [Dirs]
 Name: "{app}\logs"
 
 [Icons]
-Name: "{group}\会帮手"; Filename: "{app}\会帮手.exe"; WorkingDir: "{app}"
+Name: "{group}\会帮手"; Filename: "{app}\MeetTimer.exe"; WorkingDir: "{app}"
 Name: "{group}\卸载 会帮手"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\会帮手"; Filename: "{app}\会帮手.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{commondesktop}\会帮手"; Filename: "{app}\MeetTimer.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\会帮手.exe"; Description: "启动 会帮手"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MeetTimer.exe"; Description: "启动 会帮手"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\logs"

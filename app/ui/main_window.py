@@ -613,7 +613,9 @@ class MainWindow(QWidget):
             self._float_timer.update_display(tick_data)
 
         if is_countdown and not is_overtime and 0 < remaining <= 30 and not self._warning_triggered:
-            self._warning_triggered = True
+            info = self._controller.get_current_info()
+            if info.get("phase") == "presentation":
+                self._warning_triggered = True
 
         if is_overtime and not self._overtime_triggered:
             info = self._controller.get_current_info()
@@ -642,8 +644,10 @@ class MainWindow(QWidget):
                 except (json.JSONDecodeError, TypeError):
                     pass
             if self._audio.is_enabled("warning") and 0 < remaining <= remaining_minutes * 60:
-                self._remaining_minutes_triggered = True
-                self._audio.play("warning")
+                info = self._controller.get_current_info()
+                if info.get("phase") == "presentation":
+                    self._remaining_minutes_triggered = True
+                    self._audio.play("warning")
 
         if is_overtime:
             raw = self._db.get_setting(SETTING_KEY_SOUNDS)

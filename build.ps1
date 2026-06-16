@@ -19,10 +19,10 @@ if (-not (Test-Path $pyinstaller)) {
 Write-Host "Building MeetTimer..." -ForegroundColor Green
 & $pyinstaller --clean --noconfirm "gac_timer.spec"
 
-$outputDir = Join-Path $projectDir "dist\会帮手"
+$outputDir = Join-Path $projectDir "dist\MeetTimer"
 if (Test-Path $outputDir) {
     Write-Host "Build successful! Output at: $outputDir" -ForegroundColor Green
-    Write-Host "Run 会帮手.exe from the output directory." -ForegroundColor Cyan
+    Write-Host "Run the executable from the output directory." -ForegroundColor Cyan
 } else {
     Write-Host "Build failed!" -ForegroundColor Red
     exit 1
