@@ -183,7 +183,7 @@ class HistoryPanel(QWidget):
 
             try:
                 dt = datetime.fromisoformat(meeting.created_at)
-                date_str = dt.strftime("%Y-%m-%d %H:%M")
+                date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M")
             except (ValueError, TypeError):
                 date_str = meeting.created_at
 
@@ -267,7 +267,7 @@ class HistoryPanel(QWidget):
 
         try:
             dt = datetime.fromisoformat(meeting.created_at)
-            formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+            formatted_date = dt.astimezone().strftime("%Y-%m-%d %H:%M")
         except (ValueError, TypeError):
             formatted_date = meeting.created_at
 
