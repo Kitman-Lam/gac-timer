@@ -43,9 +43,9 @@ SETTING_KEY_DEFAULTS = "defaults"
 
 DEFAULT_SOUNDS = {
     "warning": "custom_TPBTLOW",
-    "remaining_minutes": 5,
+    "warning_minutes": 3,
     "timeup": "custom_over",
-    "timeup_scope_qa": True,
+    "timeup_scope_qa": False,
     "timeup_scope_presentation": True,
     "overtime": "voice",
     "overtime_minutes": 5,
@@ -62,7 +62,7 @@ DEFAULT_DISPLAY = {
 
 DEFAULT_TIMES = {
     "presentation_minutes": 10,
-    "qa_minutes": 5,
+    "qa_minutes": 10,
 }
 
 SECTION_LABEL_STYLE = (
@@ -672,13 +672,13 @@ QPushButton#secondaryBtn {
                 for sound_type, spin in self._sound_spins.items():
                     spin.setValue(sounds.get(f"{sound_type}_minutes", DEFAULT_SOUNDS.get(f"{sound_type}_minutes", 5)))
                 if hasattr(self, '_overtime_scope_qa_cb'):
-                    self._overtime_scope_qa_cb.setChecked(sounds.get("overtime_scope_qa", True))
+                    self._overtime_scope_qa_cb.setChecked(sounds.get("overtime_scope_qa", DEFAULT_SOUNDS["overtime_scope_qa"]))
                 if hasattr(self, '_overtime_scope_pres_cb'):
-                    self._overtime_scope_pres_cb.setChecked(sounds.get("overtime_scope_presentation", False))
+                    self._overtime_scope_pres_cb.setChecked(sounds.get("overtime_scope_presentation", DEFAULT_SOUNDS["overtime_scope_presentation"]))
                 if hasattr(self, '_timeup_scope_qa_cb'):
-                    self._timeup_scope_qa_cb.setChecked(sounds.get("timeup_scope_qa", True))
+                    self._timeup_scope_qa_cb.setChecked(sounds.get("timeup_scope_qa", DEFAULT_SOUNDS["timeup_scope_qa"]))
                 if hasattr(self, '_timeup_scope_pres_cb'):
-                    self._timeup_scope_pres_cb.setChecked(sounds.get("timeup_scope_presentation", True))
+                    self._timeup_scope_pres_cb.setChecked(sounds.get("timeup_scope_presentation", DEFAULT_SOUNDS["timeup_scope_presentation"]))
                 if hasattr(self, '_overtime_voice_edit'):
                     self._overtime_voice_edit.setText(sounds.get("overtime_voice_text", "已进行"))
                     combo = self._sound_combos.get("overtime")

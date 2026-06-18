@@ -121,7 +121,7 @@ class DatabaseManager:
                     sort_order INTEGER NOT NULL,
                     name TEXT NOT NULL,
                     presentation_minutes INTEGER NOT NULL DEFAULT 10,
-                    qa_minutes INTEGER NOT NULL DEFAULT 5,
+                    qa_minutes INTEGER NOT NULL DEFAULT 10,
                     FOREIGN KEY (template_id) REFERENCES meeting_templates(id) ON DELETE CASCADE
                 );
 
@@ -165,7 +165,55 @@ class DatabaseManager:
                     value TEXT NOT NULL
                 );
             """)
+        # 初始化默认配置（保证新默认值生效）
+        self._init_default_settings()
 
+    def _init_default_settings(self):
+        """确保所有默认配置都正确写入数据库（但不会覆盖用户已有配置）"""
+        import json
+        
+        # 新的默认值
+        new_default_times = {
+            "presentation_minutes": 10,
+            "qa_minutes": 10,
+        }
+        new_default_sounds = {
+            "warning": "custom_TPBTLOW",
+            "warning_minutes": 3,
+            "timeup": "custom_over",
+            "timeup_scope_qa": False,
+            "timeup_scope_presentation": True,
+            "overtime": "voice",
+            "overtime_minutes": 5,
+            "overtime_scope_qa": True,
+            "overtime_scope_presentation": False,
+            "overtime_voice_text": "已进行",
+        }
+        new_default_display = {
+            "opacity": 85,
+            "float_size": "medium",
+            "show_topic_name": True,
+        }
+        
+        # 检查是否需要升级默认配置
+        # 如果 schema_version 不存在或者小于 1.25，说明是旧版本，强制更新默认值
+        schema_version = self.get_setting("schema_version")
+        
+        # 判断是否需要升级
+        should_upgrade = (
+            not schema_version or 
+            float(schema_version) < 1.25
+        )
+        
+        if should_upgrade:
+            # 这次：直接强制更新所有默认值！不保留旧的！
+            self.set_setting("defaults", json.dumps(new_default_times))
+            self.set_setting("sounds", json.dumps(new_default_sounds))
+            self.set_setting("display", json.dumps(new_default_display))
+        
+        # 设置 schema 版本（下次我们可以用这个检测是否需要升级配置）
+        self.set_setting("schema_version", "1.25")
+    
     @staticmethod
     def _now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()

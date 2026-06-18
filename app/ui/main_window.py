@@ -379,7 +379,7 @@ class MainWindow(QWidget):
 
         self._topic_table = _TopicTable()
         self._topic_table.setColumnCount(5)
-        self._topic_table.setHorizontalHeaderLabels(["序号", "议题", "汇报时间", "讨论时间", "操作"])
+        self._topic_table.setHorizontalHeaderLabels(["序号", "议题", "汇报", "讨论", "操作"])
         self._topic_table.horizontalHeader().setStretchLastSection(False)
         self._topic_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self._topic_table.setColumnWidth(0, 50)
@@ -640,7 +640,7 @@ class MainWindow(QWidget):
             if raw:
                 try:
                     sounds = json.loads(raw)
-                    remaining_minutes = sounds.get("remaining_minutes", 5)
+                    remaining_minutes = sounds.get("warning_minutes", 5)
                 except (json.JSONDecodeError, TypeError):
                     pass
             if self._audio.is_enabled("warning") and 0 < remaining <= remaining_minutes * 60:
@@ -801,6 +801,7 @@ class MainWindow(QWidget):
         self._float_timer.next_topic_requested.connect(self._on_next_topic)
         self._float_timer.add_temp_topic_requested.connect(self._on_add_temp_topic)
         self._float_timer.end_meeting_requested.connect(self._on_end_meeting)
+        self._float_timer.start_meeting_requested.connect(self._config_panel._on_start_meeting)
 
         self._apply_float_display_settings()
         self._float_timer.show()
@@ -885,7 +886,7 @@ class MainWindow(QWidget):
         else:
             sounds = dict(DEFAULT_SOUNDS)
         self._float_timer.set_reminder_config(
-            sounds.get("remaining_minutes", 5),
+            sounds.get("warning_minutes", 5),
             sounds.get("overtime_minutes", 5),
         )
 
@@ -910,7 +911,7 @@ class MainWindow(QWidget):
         else:
             sounds = dict(DEFAULT_SOUNDS)
         self._float_timer.set_reminder_config(
-            sounds.get("remaining_minutes", 5),
+            sounds.get("warning_minutes", 5),
             sounds.get("overtime_minutes", 5),
         )
 
@@ -951,12 +952,28 @@ class MainWindow(QWidget):
                 if engine.state in (TimerEngine.OVERTIME, TimerEngine.PAUSED_OT):
                     self._overtime_triggered = True
                     self._remaining_minutes_triggered = True
+                    self._warning_triggered = True
                     tick = engine.tick()
                     overtime = tick.get("overtime_seconds", 0.0)
                     self._last_overtime_minute = int(overtime) // 60
                     self._recovery_overtime = overtime
                 else:
                     self._recovery_overtime = None
+                    tick = engine.tick()
+                    remaining = tick.get("remaining_seconds", 0)
+                    if remaining > 0:
+                        raw = self._db.get_setting(SETTING_KEY_SOUNDS)
+                        remaining_minutes = 5
+                        if raw:
+                            try:
+                                sounds = json.loads(raw)
+                                remaining_minutes = sounds.get("warning_minutes", 5)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        if remaining <= remaining_minutes * 60:
+                            self._remaining_minutes_triggered = True
+                        if remaining <= 30:
+                            self._warning_triggered = True
 
                 info = self._controller.get_current_info()
                 self._topic_name_label.setText(info.get("topic_name", ""))
@@ -1168,11 +1185,11 @@ class MainWindow(QWidget):
                 defaults = json.loads(raw)
                 return (
                     defaults.get("presentation_minutes", 10),
-                    defaults.get("qa_minutes", 5),
+                    defaults.get("qa_minutes", 10),
                 )
             except (json.JSONDecodeError, TypeError):
                 pass
-        return 10, 5
+        return 10, 10
 
     def _on_add_temp_topic(self):
         if self._current_meeting_id is None:

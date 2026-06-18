@@ -36,6 +36,7 @@ class FloatTimer(QWidget):
     next_topic_requested = Signal()
     add_temp_topic_requested = Signal()
     end_meeting_requested = Signal()
+    start_meeting_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -219,7 +220,12 @@ class FloatTimer(QWidget):
         if self._phase == "qa":
             text = "讨论暂停" if self._is_paused else "讨论中"
         else:
-            text = "汇报暂停" if self._is_paused else "汇报中"
+            if self._is_paused:
+                text = "汇报暂停"
+            elif self._is_overtime:
+                text = "汇报超时"
+            else:
+                text = "汇报中"
 
         font_size = max(8, int(radius * 0.18))
         font = QFont(FONT_FAMILY, font_size, QFont.Bold)
@@ -229,7 +235,7 @@ class FloatTimer(QWidget):
 
         if self._is_paused:
             fill_color = QColor(0xEB, 0x09, 0x1F)
-            stroke_color = QColor(255, 255, 255, self._opacity_alpha(255))
+            stroke_color = QColor(255, 255, 255)
         else:
             fill_color = QColor(255, 255, 255)
             stroke_color = None
@@ -385,8 +391,11 @@ class FloatTimer(QWidget):
         add_temp_topic_action.triggered.connect(self.add_temp_topic_requested.emit)
         menu.addAction(add_temp_topic_action)
 
-        end_meeting_action = QAction("结束会议", self)
-        end_meeting_action.triggered.connect(self.end_meeting_requested.emit)
+        end_meeting_action = QAction("结束会议" if self._is_running else "开始会议", self)
+        if self._is_running:
+            end_meeting_action.triggered.connect(self.end_meeting_requested.emit)
+        else:
+            end_meeting_action.triggered.connect(self.start_meeting_requested.emit)
         menu.addAction(end_meeting_action)
 
         menu.exec_(event.globalPos())

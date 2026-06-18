@@ -147,6 +147,7 @@ def main():
     font.setPointSize(10)
     app.setFont(font)
 
+    # 数据库放在当前目录下（开发环境），打包后会放在安装目录下
     db_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     os.makedirs(db_dir, exist_ok=True)
     db_path = os.path.join(db_dir, "gac_timer.db")

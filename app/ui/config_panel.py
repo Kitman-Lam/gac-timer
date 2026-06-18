@@ -306,13 +306,13 @@ class ConfigPanel(QWidget):
             try:
                 defaults = json.loads(raw)
                 self._default_presentation = defaults.get("presentation_minutes", 10)
-                self._default_qa = defaults.get("qa_minutes", 5)
+                self._default_qa = defaults.get("qa_minutes", 10)
             except (json.JSONDecodeError, TypeError):
                 self._default_presentation = 10
-                self._default_qa = 5
+                self._default_qa = 10
         else:
             self._default_presentation = 10
-            self._default_qa = 5
+            self._default_qa = 10
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -362,7 +362,7 @@ class ConfigPanel(QWidget):
 
         self._topic_list = QTableWidget()
         self._topic_list.setColumnCount(4)
-        self._topic_list.setHorizontalHeaderLabels(["", "议题", "汇报时间（分钟）", "讨论时间（分钟）"])
+        self._topic_list.setHorizontalHeaderLabels(["", "议题", "汇报（分钟）", "讨论（分钟）"])
         self._topic_checkable_header = CheckableHeaderView(self._topic_list)
         self._topic_list.setHorizontalHeader(self._topic_checkable_header)
         self._topic_checkable_header.checkbox_clicked.connect(self._on_header_clicked)
